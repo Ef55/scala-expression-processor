@@ -2,41 +2,54 @@ import utest.*
 
 import exproc.*
 
-sealed trait MathExpr
-case class Variable(name: String) extends MathExpr
-case class Constant(i: Int) extends MathExpr
-case class Assign(to: Variable, v: MathExpr) extends MathExpr
-case class Plus(lhs: MathExpr, rhs: MathExpr) extends MathExpr
-case class Minus(lhs: MathExpr, rhs: MathExpr) extends MathExpr
-case class Sequence(first: MathExpr, second: MathExpr) extends MathExpr
-case class If(cond: MathExpr, thenn: MathExpr, elze: MathExpr) extends MathExpr
-case class While(cond: MathExpr, body: MathExpr) extends MathExpr
+type MathType = Int | Boolean
 
-extension (m: MathExpr) {
-  def +(n: MathExpr) = Plus(m, n)
-  def -(n: MathExpr) = Minus(m, n)
-}
+sealed trait MathExpr[+T]
+case class Variable(name: String) extends MathExpr[Int]
+case class Constant(i: Int) extends MathExpr[Int]
+case class Assign(to: Variable, v: MathExpr[Int]) extends MathExpr[Int]
+case class Plus(lhs: MathExpr[Int], rhs: MathExpr[Int]) extends MathExpr[Int]
+case class Minus(lhs: MathExpr[Int], rhs: MathExpr[Int]) extends MathExpr[Int]
+case class Sequence[T](first: MathExpr[?], second: MathExpr[T]) extends MathExpr[T]
+case class If[T](cond: MathExpr[Boolean], thenn: MathExpr[T], elze: MathExpr[T]) extends MathExpr[T]
+case class While(cond: MathExpr[Boolean], body: MathExpr[Any]) extends MathExpr[Unit]
+case class Eq[T](lhs: MathExpr[T], rhs: MathExpr[T]) extends MathExpr[Boolean]
 
 extension (v: Variable) {
-  def :=(m: MathExpr) = Assign(v, m)
+  def :=(m: MathExpr[Int]) = Assign(v, m)
+}
+
+extension (m: MathExpr[Int]) {
+  def +(n: MathExpr[Int]) = Plus(m, n)
+  def -(n: MathExpr[Int]) = Minus(m, n)
+}
+
+extension [T](m: MathExpr[T]) {
+  def ===(n: MathExpr[T]) = Eq(m, n)
 }
 
 object MathProcessor extends Processor[MathExpr] {
-  given Conversion[MathExpr, Boolean] = ???
-
-  override def sequence(ls: Seq[MathExpr]) = ls.reduceRight(Sequence(_, _))
-  override def ifThenElse(cond: MathExpr, thenn: MathExpr, elze: MathExpr) = If(cond, thenn, elze)
-  override def whileLoop(cond: MathExpr, body: MathExpr) = While(cond, body)
+  override def sequence[T](ls: Seq[MathExpr[Any]], last: MathExpr[T]) = ls.foldRight(last)(Sequence(_, _))
+  override def ifThenElse[T](cond: MathExpr[Boolean], thenn: MathExpr[T], elze: MathExpr[T]) = If(cond, thenn, elze)
+  override def whileLoop(cond: MathExpr[Boolean], body: MathExpr[Any]) = While(cond, body)
 }
 
-inline def math(inline expr: Any): MathExpr = process(MathProcessor)(expr)
+inline def math[T](inline expr: MathExpr[T]): MathExpr[T] = MathProcessor(expr)
 
-inline def mathAssert(inline expr: Any)(res: MathExpr): Unit = assert( math(expr) == res )
+inline def mathAssert[T](inline expr: MathExpr[T])(expected: MathExpr[T]): Unit = 
+  val result = math(expr)
+  assert( result == expected )
 
 object MathProcessorTests extends TestSuite {
   import MathProcessor.given
+
   val tests = Tests {
     test("DSL") {
+      test("equality") {
+        mathAssert{
+          Variable("x") === Constant(0)
+        }(Eq(Variable("x"), Constant(0)))
+      }
       test("assignation") {
         mathAssert{
           Variable("x") := Variable("y") + Constant(5)
@@ -63,15 +76,30 @@ object MathProcessorTests extends TestSuite {
     test("proto-control-flow") {
       test("if-then-else") {
         mathAssert{
-          if Variable("x") := Constant(-1) then
+          if Variable("x") === Constant(-1) then
             Constant(0)
           else
             Constant(1)
         }(
           If(
-            Assign(Variable("x"), Constant(-1)),
+            Eq(Variable("x"), Constant(-1)),
             Constant(0),
             Constant(1)
+          )
+        )
+      }
+      test("while") {
+        mathAssert{
+          while Variable("x") === Constant(0) do
+            Variable("x") := Variable("x")  - Constant(3)
+          Variable("x")
+        }(
+          Sequence(
+            While(
+              Eq(Variable("x"), Constant(0)),
+              Assign(Variable("x"), Minus(Variable("x"), Constant(3)))
+            ),
+            Variable("x")
           )
         )
       }

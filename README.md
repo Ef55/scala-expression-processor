@@ -1,1 +1,1 @@
-# Expressions compiler library
+# Expressions processor library
