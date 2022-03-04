@@ -7,6 +7,7 @@ lazy val root = project
     version := "0.1.0-SNAPSHOT",
 
     scalaVersion := scala3Version,
+    // scalacOptions := Seq("-Xcheck-macros"), Cause errors with utest...
 
     libraryDependencies += "com.lihaoyi" %% "utest" % "0.7.10" % "test",
 
