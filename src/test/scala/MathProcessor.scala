@@ -140,6 +140,16 @@ object MathProcessorTests extends TestSuite {
         =>}
       }
     }
+    test("meta-control-flow") {
+      test("if-then-else") {
+        mathAssert{
+          val b = true
+          if b then Constant(1) else Constant(0)
+        }{case 
+          Constant(1)
+        =>}
+      }
+    }
     test("runtime-errors") {
       test("bool-unwrap-abuse") {
         val e = intercept[FeatureMisuseException](math{
@@ -148,20 +158,25 @@ object MathProcessorTests extends TestSuite {
           val b: Boolean = x === Constant(0)
         })
         assert(e.msg.contains("should have been erased"))
+        assert(e.msg.contains("if/while"))
       }
-      test("initializer-abuse") {
-        val e = intercept[FeatureMisuseException](math{
-          val x: Variable[Int] = 0
-          x := 1
-        })
-        assert(e.msg.contains("should have been erased"))
-      }
-      test("top-level-initializer") {
-        val e = intercept[FeatureMisuseException](math{
-          ()
-        })
-        assert(e.msg.contains("should have been erased"))
-      }
+    }
+    test("compiletime-errors") {
+      // test("initializer-abuse") {
+      //   val e = intercept[FeatureMisuseException](math{
+      //     val x: Variable[Int] = 0
+      //     x := 1
+      //   })
+      //   assert(e.msg.contains("should have been erased"))
+      //   assert(e.msg.contains("val/var"))
+      // }
+      // test("top-level-initializer") {
+      //   val e = intercept[FeatureMisuseException](math{
+      //     ()
+      //   })
+      //   assert(e.msg.contains("should have been erased"))
+      //   assert(e.msg.contains("val/var"))
+      // }
     }
     test("variable-shadowing") {
       val r = math {
@@ -189,6 +204,17 @@ object MathProcessorTests extends TestSuite {
           assert(x2 != y1, x2 != y2)
       }
     }
+
+    //test("WIP") {
+      // test("for") {
+      //   mathAssert{
+      //     for i <- 0 until 3 do
+      //       Constant(i)
+      //   }{
+      //     PartialFunction.empty
+      //   }
+      // }
+    //}
   }
 
 }

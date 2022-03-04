@@ -32,13 +32,15 @@ trait Processor[Processed[+_], Variable[+t] <: Processed[t]] {
 
   def empty: Processed[Unit] = throw ExpressionProcessorException("Unavailable feature: empty block")
 
-  final inline def apply[T](inline expr: Processed[T]): Processed[T] = process(this)(expr)
+  final inline def apply[T](inline expr: Processed[T]): Processed[T] = process(this)(expr)    
 
-  private def conversionToBeErased(element: String): Nothing = 
-    throw FeatureMisuseException(s"${element.emph} should have been erased during processing; using this conversion in unintended places is illegal.")
+  private final def conversionToBeErased(element: String, help: String): Nothing = 
+    throw FeatureMisuseException(s"The given ${element.emph} should have been erased during processing; ${help}.")
   
-  given boolUnwrapper: Conversion[Processed[Boolean], Boolean] = conversionToBeErased("Conversion[Processed[Boolean], Boolean]")
-  given variableInitialization[T]: Conversion[T, Variable[T]] = conversionToBeErased("Conversion[T, Processed[T]]")
+  given boolUnwrapper: Conversion[Processed[Boolean], Boolean] = 
+    conversionToBeErased("Conversion[Processed[Boolean], Boolean]", "it can only be used inside the condition of a if/while")
+  given variableInitialization[T]: Conversion[T, Variable[T]] = 
+    conversionToBeErased("Conversion[T, Processed[T]]", "it can only be used to intialize val/var")
 }
 
 inline def process[Processed[+_], Variable[+t] <: Processed[t], T](processor: Processor[Processed, Variable])(inline expr: Processed[T]): Processed[T] =
@@ -59,12 +61,30 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
     val symbol = TypeRepr.of[Processor].typeSymbol
     val term = processorExpr.asTerm
 
-    val variable = member("variable")
-    val initializer = member("initializer")
-    val constant = member("constant")
-    val sequence = member("sequence")
-    val ifThenElse = member("ifThenElse")
-    val whileLoop = member("whileLoop")
+    def variable(t: TypeRepr)(id: Term): Term = 
+      member("variable").appliedToType(t).appliedTo(id)
+    def initializer(t: TypeRepr)(va: Term, init: Term): Term = 
+      member("initializer").appliedToType(t).appliedToArgs(List(va, init))
+    def constant(t: TypeRepr)(cst: Term): Term = 
+      member("constant").appliedToType(t).appliedTo(cst)
+    def sequence(t: TypeRepr)(fsts: Term, last: Term): Term = 
+      member("sequence").appliedToType(t).appliedToArgs(List(fsts, last))
+    def ifThenElse(t: TypeRepr)(cond: Term, thenn: Term, elze: Term): Term = 
+      member("ifThenElse").appliedToType(t).appliedToArgs(List(cond, thenn, elze))
+    def whileLoop(cond: Term, body: Term): Term = 
+      member("whileLoop").appliedToArgs(List(cond, body))
+    def empty: Term = member("empty")
+
+    def sequenceSeq(ls: List[Expr[Processed[Any]]]): Term = 
+      require(!ls.isEmpty)
+      val (firsts, last) = (ls: @unchecked) match 
+        case solo :: Nil => (List.empty[Expr[Processed[Any]]], solo)
+        case firsts :+ last => (firsts, last)
+
+      processor.sequence(TypeRepr.of[Any])(
+        Expr.ofList(firsts).asTerm,
+        last.asTerm
+      )
   }  
 
   extension (t: Term) {
@@ -91,8 +111,6 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
       processedInternal[S](err => throw ExpressionProcessorImplementationError(err))
   }
 
-  def processes[S](t: Term)(using Type[S]): Expr[Processed[S]] =
-    t.processed[S]
 
   object ImplicitConversion {
     def unapply(t: Term): Option[(Term, TypeRepr, TypeRepr)] = t match 
@@ -136,34 +154,36 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
 
   object Transform extends TreeMap {
 
+    override def transformTree(t: Tree)(owner: Symbol): Tree = t match
+      case s: Statement => 
+        transformToStatements(s)(owner) match 
+          case s :: Nil => s
+          case s :: expr :: Nil => expr match 
+            case expr: Term => Block(List(s), expr)
+            case _ => throw ExpressionProcessorImplementationError(s"`${"transformToStatements".emph}` second statement should be an expression.")
+          case _ => throw ExpressionProcessorImplementationError(s"`${"transformToStatements".emph}` should not return more than two statements.")
+      case _ => super.transformTree(t)(owner)
+
     override def transformStatement(s: Statement)(owner: Symbol) = 
       throw ExpressionProcessorImplementationError("Method should not have been called.")
 
-    override def transformStats(ls: List[Statement])(owner: Symbol): List[Statement] =
-      def transformStatement(s: Statement): List[Statement] = s match 
-        case ValDef(name, tt, Some(InitializationUnwrapping(init, initt))) => 
-          val ProcessedParameter(typ) = tt.tpe
-          val va = 
-            processor
-              .variable
-              .appliedToType(typ)
-              .appliedTo('{Identifier(${Expr(name)})}.asTerm)
-          List(
-            ValDef.copy(s)(name, tt, Some(va)),   // Meta-variable definition
-            processor                             // Proto-variable definition
-              .initializer
-              .appliedToType(typ)
-              .appliedTo(
-                va, 
-                processor
-                  .constant
-                  .appliedToType(typ)
-                  .appliedTo(init)
-              )
+    def transformToStatements(s: Statement)(owner: Symbol): List[Statement] = s match 
+      case ValDef(name, tt, Some(InitializationUnwrapping(init, initt))) => 
+        val ProcessedParameter(typ) = tt.tpe
+        val va = 
+          processor
+            .variable(typ)('{Identifier(${Expr(name)})}.asTerm)
+        List(
+          ValDef.copy(s)(name, tt, Some(va)),   // Meta-variable definition
+          processor.initializer(typ)(           // Proto-variable definition
+            va,
+            processor.constant(typ)(init)
           )
-        case _ => List(super.transformStatement(s)(owner))
+        )
+      case _ => List(super.transformStatement(s)(owner))
 
-      ls.flatMap(transformStatement)
+    override def transformStats(ls: List[Statement])(owner: Symbol): List[Statement] =
+      ls.flatMap(transformToStatements(_)(owner))
 
     def splitStatements(statements: List[Statement])(owner: Symbol): (List[Statement], List[Expr[Processed[Any]]]) =
       val pStatements = transformStats(statements)(owner)
@@ -174,6 +194,21 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
       (pStatements, exprs)
 
     override def transformTerm(t: Term)(owner: Symbol): Term = t match 
+
+      case Block(statements, InitializationUnwrapping(Literal(UnitConstant()), _)) =>
+        val (pStatements, exprs) = splitStatements(statements)(owner)
+
+        Block(
+          pStatements,
+          processor.sequence(TypeRepr.of[Unit])(
+            Expr.ofList(exprs).asTerm,
+            processor.empty
+          )
+        )
+
+      case InitializationUnwrapping(t, typ) =>
+        throw ExpressionProcessorException(s"${t.show.emph} of type ${typ.show.emph} is not ${TypeRepr.of[Processed].show.emph}")
+
       case Block(statements, term) =>
         val (pStatements, exprs) = splitStatements(statements)(owner)       
         val last = transformTerm(term)(owner)
@@ -181,13 +216,10 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
 
         Block(
           pStatements,
-          processor
-            .sequence
-            .appliedToType(typ)
-            .appliedToArgs(List(
-              Expr.ofList(exprs).asTerm, 
-              last
-            ))
+          processor.sequence(typ)(
+            Expr.ofList(exprs).asTerm, 
+            last
+          )
         )
 
       case If(BoolUnwrapping(cond), thenn, elze) =>
@@ -198,42 +230,33 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
         val pThen = transformTerm(thenn)(owner)
         val pElse = transformTerm(elze)(owner)
         val ProcessedParameter(typ) = t.tpe
-        processor
-          .ifThenElse
-          .appliedToType(typ)
-          .appliedToArgs(List(
-            pCond, 
-            pThen, 
-            pElse
-          ))
+        processor.ifThenElse(typ)(
+          pCond, 
+          pThen, 
+          pElse
+        )
 
       case While(BoolUnwrapping(cond), Block(statements, Literal(UnitConstant()))) =>
+        /* Note: this case handles the full `<while> cond <block> statements () </block> </while>`
+         * at once to avoid an unnecessary call to `processor.empty`
+         */
+        
         assert(cond.isProcessedOf[Boolean])
         val pCond = transformTerm(cond)(owner)
         val (pStatements, exprs) = splitStatements(statements)(owner)
-        val (firsts: Expr[List[Processed[Any]]], last) = exprs match 
-          case Nil => (Nil, '{${processorExpr}.empty})
-          case f :+ l => (Expr.ofList(f), l)
-          case _ => throw ExpressionProcessorImplementationError("Match should have been exhaustive...")
+
         Block(
           pStatements,
-          processor
-            .whileLoop
-            .appliedToArgs(List(
-              pCond,
-              processor
-                .sequence
-                .appliedToType(TypeRepr.of[Any])
-                .appliedToArgs(List(
-                  firsts.asTerm,
-                  last.asTerm
-                ))
-            ))
+          processor.whileLoop(
+            pCond,
+            processor.sequenceSeq(exprs)
+          )
         )
 
       case _ => super.transformTerm(t)(owner)
   }
 
+  //println(s"Input:\n${expr.asTerm.show}")
   val r = Transform.transformTerm(expr.asTerm)(Symbol.spliceOwner).processedOrError[T]
   //println(s"Processed:\n${r.asTerm.show}")
   r
