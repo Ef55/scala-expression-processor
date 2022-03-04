@@ -23,7 +23,7 @@ case class ExpressionProcessorImplementationError(msg: String) extends Error {
 trait Processor[Processed[+_], Variable[+t] <: Processed[t]] {
   import Utils.*
 
-  def variable[T](name: String): Variable[T]
+  def variable[T](id: Identifier): Variable[T]
   def initializer[T](va: Variable[T], init: Processed[T]): Processed[Unit]
   def constant[T](t: T): Processed[T]
   def sequence[T](fsts: Seq[Processed[Any]], last: Processed[T]): Processed[T]
@@ -51,7 +51,7 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
   import Utils.*
 
   object processor {
-    private def member(name: String): Term = 
+    private inline def member(name: String): Term = 
       val methds = symbol.declaredMethod(name)
       assert(methds.length == 1)
       term.select(methds.head)
@@ -97,7 +97,7 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
   object ImplicitConversion {
     def unapply(t: Term): Option[(Term, TypeRepr, TypeRepr)] = t match 
       case a@Apply(Select(conversion, "apply"), arg :: Nil) => 
-        val convKind = TypeRepr.of[Conversion[_, _]]
+        val convKind = TypeRepr.of[Conversion]
         val conv = convKind.appliedTo(List(arg.tpe, a.tpe))
         if conv.typeSymbol == conversion.tpe.typeSymbol && conversion.symbol.flags.is(Flags.Given) then
           Some((arg, arg.tpe, a.tpe))
@@ -147,7 +147,7 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
             processor
               .variable
               .appliedToType(typ)
-              .appliedTo(Expr(name).asTerm)
+              .appliedTo('{Identifier(${Expr(name)})}.asTerm)
           List(
             ValDef.copy(s)(name, tt, Some(va)),   // Meta-variable definition
             processor                             // Proto-variable definition
