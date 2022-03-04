@@ -103,6 +103,15 @@ object MathProcessorTests extends TestSuite {
         )
       =>}
     }
+    test("optional-features") {
+      test("empty") {
+        val err = intercept[MissingFeature](math{
+          ()
+        })
+        assert(err.toString.contains("Missing feature"))
+        assert(err.toString.contains("empty"))
+      }
+    }
     test("proto-control-flow") {
       test("if-then-else") {
         mathAssert{
@@ -150,33 +159,31 @@ object MathProcessorTests extends TestSuite {
         =>}
       }
     }
-    test("runtime-errors") {
+    test("errors") {
       test("bool-unwrap-abuse") {
-        val e = intercept[FeatureMisuseException](math{
+        val err = compileError("""math{
           val x: Variable[Int] = 0
           if x === Constant(0) then Constant(0) else Constant(1)
           val b: Boolean = x === Constant(0)
-        })
-        assert(e.msg.contains("should have been erased"))
-        assert(e.msg.contains("if/while"))
+        }""")
+        assert(err.msg.contains("being converted"))
+        assert(err.msg.contains("if/while"))
       }
-    }
-    test("compiletime-errors") {
-      // test("initializer-abuse") {
-      //   val e = intercept[FeatureMisuseException](math{
-      //     val x: Variable[Int] = 0
-      //     x := 1
-      //   })
-      //   assert(e.msg.contains("should have been erased"))
-      //   assert(e.msg.contains("val/var"))
-      // }
-      // test("top-level-initializer") {
-      //   val e = intercept[FeatureMisuseException](math{
-      //     ()
-      //   })
-      //   assert(e.msg.contains("should have been erased"))
-      //   assert(e.msg.contains("val/var"))
-      // }
+      test("initializer-abuse") {
+        val err = compileError("""math{
+          val x: Variable[Int] = 0
+          x := 1
+        }""")
+        assert(err.msg.contains("1"))
+        assert(err.msg.contains("not of type MathExpr"))
+      }
+      test("top-level-initializer") {
+        val err = compileError("""math{
+          1
+        }""")
+        assert(err.msg.contains("1"))
+        assert(err.msg.contains("not of type MathExpr"))
+      }
     }
     test("variable-shadowing") {
       val r = math {

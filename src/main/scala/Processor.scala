@@ -1,19 +1,10 @@
 package exproc
 
 import scala.quoted.*
-import scala.compiletime.*
 
-package object Utils {
-  extension (s: String)
-    private def emphColor = Console.BLUE
-    def emph: String = emphColor + s.replace("\n", s"\n${emphColor}")
+case class MissingFeature(feature: String) extends Exception {
+  override def toString = s"Missing feature --- ${feature}"
 }
-
-case class ExpressionProcessorException(msg: String) extends Exception {
-  override def toString = msg
-}
-class FeatureMisuseException(msg: String) extends ExpressionProcessorException(msg) {}
-class InvalidProtoType(typeName: String) extends ExpressionProcessorException(s"Invalid proto-type: ${typeName}") {}
 
 case class ExpressionProcessorImplementationError(msg: String) extends Error {
   override def toString = msg
@@ -21,8 +12,6 @@ case class ExpressionProcessorImplementationError(msg: String) extends Error {
 
 
 trait Processor[Processed[+_], Variable[+t] <: Processed[t]] {
-  import Utils.*
-
   def variable[T](id: Identifier): Variable[T]
   def initializer[T](va: Variable[T], init: Processed[T]): Processed[Unit]
   def constant[T](t: T): Processed[T]
@@ -30,17 +19,17 @@ trait Processor[Processed[+_], Variable[+t] <: Processed[t]] {
   def ifThenElse[T](cond: Processed[Boolean], thenn: Processed[T], elze: Processed[T]): Processed[T]
   def whileLoop(cond: Processed[Boolean], body: Processed[Any]): Processed[Unit]
 
-  def empty: Processed[Unit] = throw ExpressionProcessorException("Unavailable feature: empty block")
+  def empty: Processed[Unit] = throw MissingFeature("Unavailable feature: empty")
 
   final inline def apply[T](inline expr: Processed[T]): Processed[T] = process(this)(expr)    
 
-  private final def conversionToBeErased(element: String, help: String): Nothing = 
-    throw FeatureMisuseException(s"The given ${element.emph} should have been erased during processing; ${help}.")
+  private final def conversionToBeErased(element: String): Nothing = 
+    throw ExpressionProcessorImplementationError(s"The given ${element} should have been erased during processing;.")
   
   given boolUnwrapper: Conversion[Processed[Boolean], Boolean] = 
-    conversionToBeErased("Conversion[Processed[Boolean], Boolean]", "it can only be used inside the condition of a if/while")
+    conversionToBeErased("Conversion[Processed[Boolean], Boolean]")
   given variableInitialization[T]: Conversion[T, Variable[T]] = 
-    conversionToBeErased("Conversion[T, Processed[T]]", "it can only be used to intialize val/var")
+    conversionToBeErased("Conversion[T, Processed[T]]")
 }
 
 inline def process[Processed[+_], Variable[+t] <: Processed[t], T](processor: Processor[Processed, Variable])(inline expr: Processed[T]): Processed[T] =
@@ -50,7 +39,6 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
 (processorExpr: Expr[Processor[Processed, Variable]], expr: Expr[Processed[T]])
 (using Type[Processed], Type[Variable], Type[T], Quotes): Expr[Processed[T]] = 
   import quotes.reflect.*
-  import Utils.*
 
   object processor {
     private inline def member(name: String): Term = 
@@ -91,24 +79,6 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
     def isExprOf[S](using Type[S]): Boolean = t.tpe <:< TypeRepr.of[S]
 
     def isProcessedOf[S](using Type[S]): Boolean = isExprOf[Processed[S]]
-    
-    private def processedInternal[S](onError: String => Nothing)(using Type[S]): Expr[Processed[S]] =
-      if !t.isProcessedOf[S] then 
-        onError(
-          "Error while processing\n%s\nImpossible to process expression\n%s\nwith type %s\nexpected %s".format(
-            Printer.TreeCode.show(expr.asTerm).emph,
-            Printer.TreeCode.show(t).emph,
-            Printer.TypeReprCode.show(t.tpe).emph,
-            Printer.TypeReprCode.show(TypeRepr.of[Processed[S]]).emph
-          )
-        )
-      else t.asExprOf[Processed[S]]
-
-    def processedOrError[S](using Type[S]): Expr[Processed[S]] =
-      processedInternal[S](err => throw ExpressionProcessorException(err))
-
-    def processed[S](using Type[S]): Expr[Processed[S]] = 
-      processedInternal[S](err => throw ExpressionProcessorImplementationError(err))
   }
 
 
@@ -160,8 +130,8 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
           case s :: Nil => s
           case s :: expr :: Nil => expr match 
             case expr: Term => Block(List(s), expr)
-            case _ => throw ExpressionProcessorImplementationError(s"`${"transformToStatements".emph}` second statement should be an expression.")
-          case _ => throw ExpressionProcessorImplementationError(s"`${"transformToStatements".emph}` should not return more than two statements.")
+            case _ => throw ExpressionProcessorImplementationError(s"transformToStatements second statement should be an expression.")
+          case _ => throw ExpressionProcessorImplementationError(s"transformToStatements should not return more than two statements.")
       case _ => super.transformTree(t)(owner)
 
     override def transformStatement(s: Statement)(owner: Symbol) = 
@@ -188,12 +158,15 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
     def splitStatements(statements: List[Statement])(owner: Symbol): (List[Statement], List[Expr[Processed[Any]]]) =
       val pStatements = transformStats(statements)(owner)
       val exprs = pStatements.collect{
-        case t: Term if t.isProcessedOf[Any] => t.processed[Any]
+        case t: Term if t.isProcessedOf[Any] => t.asExprOf[Processed[Any]]
       }
       //val remStatements = pStatements.filter(s => !s.isInstanceOf[Term] || !s.asInstanceOf[Term].isProcessed)
       (pStatements, exprs)
 
     override def transformTerm(t: Term)(owner: Symbol): Term = t match 
+
+      case InitializationUnwrapping(Literal(UnitConstant()), _) =>
+        processor.empty
 
       case Block(statements, InitializationUnwrapping(Literal(UnitConstant()), _)) =>
         val (pStatements, exprs) = splitStatements(statements)(owner)
@@ -207,7 +180,16 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
         )
 
       case InitializationUnwrapping(t, typ) =>
-        throw ExpressionProcessorException(s"${t.show.emph} of type ${typ.show.emph} is not ${TypeRepr.of[Processed].show.emph}")
+        report.errorAndAbort(
+          s"${t.show}: ${typ.show} is not of type ${TypeRepr.of[Processed].typeSymbol.name}[T]",
+          t.pos
+        )
+      
+      case BoolUnwrapping(t) => 
+        report.errorAndAbort(
+          s"${t.show}: is being converted to Boolean, which is only allowed in the condition of a if/while.",
+          t.pos
+        )
 
       case Block(statements, term) =>
         val (pStatements, exprs) = splitStatements(statements)(owner)       
@@ -257,6 +239,6 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
   }
 
   //println(s"Input:\n${expr.asTerm.show}")
-  val r = Transform.transformTerm(expr.asTerm)(Symbol.spliceOwner).processedOrError[T]
+  val r = Transform.transformTerm(expr.asTerm)(Symbol.spliceOwner).asExprOf[Processed[T]]
   //println(s"Processed:\n${r.asTerm.show}")
   r
