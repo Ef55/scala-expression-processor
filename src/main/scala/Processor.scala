@@ -30,6 +30,8 @@ final case class ExpressionProcessorImplementationError protected (msg: String) 
   * 
   * The scala code is translated using 
   * {{{def apply[T](inline expr: Processed[T]): Processed[T]}}}
+  * In the documentation of its methods, we will use |...|
+  * to represent the application of this translation.
   * 
   * @tparam Processed Type of the resulting AST.
   * @tparam Variable Type of a variable in the AST.
@@ -52,11 +54,31 @@ trait Processor[Processed[+_], Variable[+t] <: Processed[t]] {
 
   /** Constructs a variable.
     * 
+    * Used in variable declaration:
+    * {{{val x: Variable[T] = init}}} 
+    * becomes
+    * {{{
+    * val x: Variable[T] = Variable[T]("x")
+    * assign(x, |init|)
+    * }}}
+    * assuming
+    * {{{init: Processed[T]}}}
+    * 
     * @group cstr
     */
   def variable[T](id: Identifier): Variable[T]
 
   /** Constructs the initialization of a variable.
+    * 
+    * Used in variable declaration:
+    * {{{val x: Variable[T] = init}}} 
+    * becomes
+    * {{{
+    * val x: Variable[T] = Variable[T]("x")
+    * assign(x, |init|)
+    * }}}
+    * assuming
+    * {{{init: Processed[T]}}}
     * 
     * @group cstr
     */
@@ -64,11 +86,32 @@ trait Processor[Processed[+_], Variable[+t] <: Processed[t]] {
 
   /** Constructs a constant.
     * 
+    * Used in variable declaration:
+    * {{{val x: Variable[T] = init}}} 
+    * becomes
+    * {{{
+    * val x: Variable[T] = Variable[T]("x")
+    * assign(x, constant(init))
+    * }}}
+    * assuming
+    * {{{init: T}}}
+    * 
     * @group cstr
     */
   def constant[T](t: T): Processed[T]
 
   /** Constructs a sequence of multiple statements.
+    * 
+    * Used in code blocks:
+    * {{{
+    * \{
+    *   val x = ...
+    *   while ...
+    *   x
+    * \}
+    * }}}
+    * becomes
+    * {{{sequence(Seq(|val x = ...|, |while ...|), |x|)}}}
     * 
     * @group cstr
     */
@@ -76,17 +119,54 @@ trait Processor[Processed[+_], Variable[+t] <: Processed[t]] {
 
   /** Constructs an if-then-else.
     * 
+    * Used in if-then-else blocks:
+    * {{{
+    * if x === Constant(0) then
+    *   Constant(1)
+    * else
+    *   Constant(0)
+    * }}}
+    * becomes
+    * {{{ifThenElse(|x === Constant(0)|, |Constant(1)|, |Constant(0)|)}}}
+    * 
     * @group cstr
     */
   def ifThenElse[T](cond: Processed[Boolean], thenn: Processed[T], elze: Processed[T]): Processed[T]
 
   /** Constructs a while-loop.
     * 
+    * Used in while-loops:
+    *
+    * 
+    * @note The body of the while-loop does not need to end with an expression;
+    * in particular, code such as 
+    * {{{
+    * while ... do
+    *   val x: Variable[Int] = 0
+    * }}}
+    * in perfectly valid, even if [[exproc.Processor.empty]] is not overriden.
+    *  
     * @group cstr
     */
   def whileLoop(cond: Processed[Boolean], body: Processed[Any]): Processed[Unit]
 
   /** Constructs an empty AST.
+    * 
+    * Used when a block ends with a statement:
+    * {{{
+    * val x: Variable[Int] = 0
+    * val y: Variable[Int] = x
+    * }}}
+    * becomes
+    * {{{
+    * sequence(
+    *   List(
+    *     |val x: Variable[Int] = 0|,
+    *     |val y: Variable[Int] = x|
+    *   ),
+    *   empty
+    * )
+    * }}}
     * 
     * @group opt
     */
@@ -98,18 +178,43 @@ trait Processor[Processed[+_], Variable[+t] <: Processed[t]] {
   /** Converts a processed expression so that it can be used
     * as the condition of a if/while.
     * 
+    * Allows things such as:
+    * {{{
+    * val x: Variable[Boolean] = ...
+    * if x then ... else ...
+    * while x do ...
+    * }}}
+    * 
     * @group dsl
     */
   given boolUnwrapper: Conversion[Processed[Boolean], Boolean] = 
     conversionToBeErased("Conversion[Processed[Boolean], Boolean]")
 
-  /** Converts a value into a processed expression
+  /** Converts a value into a variable
     * so that it can be used as an initializer of a variable.
+    * 
+    * Allows things such as:
+    * {{{
+    * val x: Variable[Unit] = empty
+    * }}}
     * 
     * @group dsl
     */
-  given variableInitialization[T]: Conversion[T, Variable[T]] = 
+  given variableConstantInitialization[T]: Conversion[T, Variable[T]] = 
     conversionToBeErased("Conversion[T, Processed[T]]")
+
+  /** Converts a processed value (i.e. an AST) into a variable
+    * so that it can be used as an initializer of a variable.
+    * 
+    * Allows things such as:
+    * {{{
+    * val x: Variable[Int] = 0
+    * }}}
+    * 
+    * @group dsl
+    */
+  given variableExpressionInitialization[T]: Conversion[Processed[T], Variable[T]] =
+    conversionToBeErased("Conversion[Processed[T], Variable[T]]")
 }
 
 private inline def process[Processed[+_], Variable[+t] <: Processed[t], T](processor: Processor[Processed, Variable])(inline expr: Processed[T]): Processed[T] =
@@ -182,7 +287,7 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
     }
   }
 
-  object InitializationUnwrapping {
+  object InitializationConstantUnwrapping {
     def unapply(t: Term): Option[(Term, TypeRepr)] = t match {
       case ImplicitConversion(converted, from, to) 
         if TypeRepr.of[Variable].appliedTo(from) <:< to => Some((converted, from))
@@ -190,9 +295,21 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
     }
   }
 
+    object InitializationExpressionUnwrapping {
+      def unapply(t: Term): Option[(Term, TypeRepr)] = t match {
+        case ImplicitConversion(converted, ProcessedParameter(typ), to) 
+          if TypeRepr.of[Variable].appliedTo(typ) <:< to => Some((converted, TypeRepr.of[Processed].appliedTo(typ)))
+        case _ => None 
+      }
+    }
+
+  object ProcessedParameterTT {
+    def unapply(tt: TypeTree): Option[TypeRepr] = 
+      ProcessedParameter.unapply(tt.tpe)
+  }
+
   object ProcessedParameter {
     def unapply(tt: TypeRepr): Option[TypeRepr] = 
-      require(tt <:< TypeRepr.of[Processed[Any]])
       val bt = tt.baseType(TypeRepr.of[Processed].typeSymbol)
       bt match {
         case AppliedType(cstr, arg :: Nil) => 
@@ -218,16 +335,19 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
       throw ExpressionProcessorImplementationError("Method should not have been called.")
 
     def transformToStatements(s: Statement)(owner: Symbol): List[Statement] = s match 
-      case ValDef(name, tt, Some(InitializationUnwrapping(init, initt))) => 
-        val ProcessedParameter(typ) = tt.tpe
+      case ValDef(name, tt@ProcessedParameterTT(typ), Some(initializer)) =>
+        val init = initializer match 
+          case InitializationConstantUnwrapping(init, typ) => processor.constant(typ)(init)
+          case InitializationExpressionUnwrapping(init, _) => init
+          case _ => initializer
+        
         val va = 
-          processor
-            .variable(typ)('{Identifier(${Expr(name)})}.asTerm)
+          processor.variable(typ)('{Identifier(${Expr(name)})}.asTerm)
         List(
           ValDef.copy(s)(name, tt, Some(va)),   // Meta-variable definition
           processor.initializer(typ)(           // Proto-variable definition
             va,
-            processor.constant(typ)(init)
+            init
           )
         )
       case _ => List(super.transformStatement(s)(owner))
@@ -245,10 +365,10 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
 
     override def transformTerm(t: Term)(owner: Symbol): Term = t match 
 
-      case InitializationUnwrapping(Literal(UnitConstant()), _) =>
+      case InitializationConstantUnwrapping(Literal(UnitConstant()), _) =>
         processor.empty
 
-      case Block(statements, InitializationUnwrapping(Literal(UnitConstant()), _)) =>
+      case Block(statements, InitializationConstantUnwrapping(Literal(UnitConstant()), _)) =>
         val (pStatements, exprs) = splitStatements(statements)(owner)
 
         Block(
@@ -259,7 +379,7 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
           )
         )
 
-      case InitializationUnwrapping(t, typ) =>
+      case InitializationConstantUnwrapping(t, typ) =>
         report.errorAndAbort(
           s"${t.show}: ${typ.show} is not of type ${TypeRepr.of[Processed].typeSymbol.name}[T]",
           t.pos

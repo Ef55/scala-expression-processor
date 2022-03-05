@@ -35,11 +35,6 @@ object math extends Processor[MathAST.MathExpr, MathAST.Variable] {
     def ===(n: MathExpr[T]) = Eq(m, n)
   }
 
-  object VariableName {
-    def unapply[T](v: Variable[T]): Option[String] = Identifier.unapply(v.id)
-  }
-
-
   given Conversion[Boolean, MathExpr[Int]] with
     def apply(b: Boolean) = if b then Constant(1) else Constant(0)
 
@@ -55,6 +50,10 @@ object math extends Processor[MathAST.MathExpr, MathAST.Variable] {
   override def sequence[T](ls: Seq[MathExpr[Any]], last: MathExpr[T]) = ls.foldRight(last)(Sequence(_, _))
   override def ifThenElse[T](cond: MathExpr[Boolean], thenn: MathExpr[T], elze: MathExpr[T]) = If(cond, thenn, elze)
   override def whileLoop(cond: MathExpr[Boolean], body: MathExpr[Any]) = While(cond, body)
+}
+
+object VariableName {
+  def unapply[T](v: MathAST.Variable[T]): Option[String] = Identifier.unapply(v.id)
 }
 
 inline def mathAssert[T](inline expr: MathAST.MathExpr[T])(inline expected: PartialFunction[Any, Unit]): Unit = 
@@ -100,6 +99,38 @@ object MathProcessorTests extends TestSuite {
           Sequence(
             Assign(VariableName("x"), Constant(0)),
             Assign(VariableName("x"), Constant(1))
+          )
+        =>}
+      }
+    }
+    test("variables") {
+      test("constant-init") {
+        mathAssert{
+          val x: Variable[Int] = 0
+          x
+        }{case 
+          Sequence(
+            Assign(VariableName("x"), Constant(0)),
+            VariableName("x")
+          )
+        =>}
+      }
+      test("expr-init") {
+        mathAssert{
+          val x: Variable[Int] = 0
+          val y: Variable[Int] = x + Constant(1)
+          val z: Variable[Int] = y
+          z
+        }{case 
+          Sequence(
+            Assign(VariableName("x"), Constant(0)),
+            Sequence(
+              Assign(VariableName("y"), Plus(VariableName("x"), Constant(1))),
+              Sequence(
+                Assign(VariableName("z"), VariableName("y")),
+                VariableName("z")
+              )
+            )
           )
         =>}
       }
