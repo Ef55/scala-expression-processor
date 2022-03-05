@@ -2,37 +2,117 @@ package exproc
 
 import scala.quoted.*
 
-case class MissingFeature(feature: String) extends Exception {
+/** Thrown when the processing requires an optional feature which is 
+  * not supported by the processor at hand.
+  * 
+  * @param feature Name of the unsupported feature.
+  * 
+  * @see [[exproc.Processor]] for a list of optional features.
+  */
+sealed case class UnsupportedFeature(feature: String) extends Exception {
   override def toString = s"Missing feature --- ${feature}"
 }
 
-case class ExpressionProcessorImplementationError(msg: String) extends Error {
+/** Thrown when the processing reaches and invalid state.
+  * 
+  * Indicates an implementation error in the library.
+  */
+final case class ExpressionProcessorImplementationError protected (msg: String) extends Error {
   override def toString = msg
 }
 
-
+/** Defines methods used to transform scala code into 
+  * a user-defined 
+  *  [[https://en.wikipedia.org/wiki/Abstract_syntax_tree Abstract Syntax Tree]] (AST).
+  * 
+  * The sub-classes should also define a suitable 
+  * [[https://en.wikipedia.org/wiki/Domain-specific_language Domain Specific Language]] (DSL).
+  * 
+  * The scala code is translated using 
+  * {{{def apply[T](inline expr: Processed[T]): Processed[T]}}}
+  * 
+  * @tparam Processed Type of the resulting AST.
+  * @tparam Variable Type of a variable in the AST.
+  * 
+  * @groupprio base 1
+  * @groupname base Usage
+  * @groupprio cstr 2
+  * @groupname cstr Constructor
+  * @groupprio opt 3
+  * @groupname opt Optional constructors
+  * @groupprio dsl 4
+  * @groupname dsl DSL
+  */
 trait Processor[Processed[+_], Variable[+t] <: Processed[t]] {
+  /** Uses this processor to transform the provided scala code.
+    *
+    * @group base
+    */ 
+  final inline def apply[T](inline expr: Processed[T]): Processed[T] = process(this)(expr)    
+
+  /** Constructs a variable.
+    * 
+    * @group cstr
+    */
   def variable[T](id: Identifier): Variable[T]
+
+  /** Constructs the initialization of a variable.
+    * 
+    * @group cstr
+    */
   def initializer[T](va: Variable[T], init: Processed[T]): Processed[Unit]
+
+  /** Constructs a constant.
+    * 
+    * @group cstr
+    */
   def constant[T](t: T): Processed[T]
+
+  /** Constructs a sequence of multiple statements.
+    * 
+    * @group cstr
+    */
   def sequence[T](fsts: Seq[Processed[Any]], last: Processed[T]): Processed[T]
+
+  /** Constructs an if-then-else.
+    * 
+    * @group cstr
+    */
   def ifThenElse[T](cond: Processed[Boolean], thenn: Processed[T], elze: Processed[T]): Processed[T]
+
+  /** Constructs a while-loop.
+    * 
+    * @group cstr
+    */
   def whileLoop(cond: Processed[Boolean], body: Processed[Any]): Processed[Unit]
 
-  def empty: Processed[Unit] = throw MissingFeature("Unavailable feature: empty")
-
-  final inline def apply[T](inline expr: Processed[T]): Processed[T] = process(this)(expr)    
+  /** Constructs an empty AST.
+    * 
+    * @group opt
+    */
+  def empty: Processed[Unit] = throw UnsupportedFeature("Unavailable feature: empty")
 
   private final def conversionToBeErased(element: String): Nothing = 
     throw ExpressionProcessorImplementationError(s"The given ${element} should have been erased during processing;.")
   
+  /** Converts a processed expression so that it can be used
+    * as the condition of a if/while.
+    * 
+    * @group dsl
+    */
   given boolUnwrapper: Conversion[Processed[Boolean], Boolean] = 
     conversionToBeErased("Conversion[Processed[Boolean], Boolean]")
+
+  /** Converts a value into a processed expression
+    * so that it can be used as an initializer of a variable.
+    * 
+    * @group dsl
+    */
   given variableInitialization[T]: Conversion[T, Variable[T]] = 
     conversionToBeErased("Conversion[T, Processed[T]]")
 }
 
-inline def process[Processed[+_], Variable[+t] <: Processed[t], T](processor: Processor[Processed, Variable])(inline expr: Processed[T]): Processed[T] =
+private inline def process[Processed[+_], Variable[+t] <: Processed[t], T](processor: Processor[Processed, Variable])(inline expr: Processed[T]): Processed[T] =
   ${processImpl('{processor}, '{expr})}
 
 private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
@@ -206,8 +286,8 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
 
       case If(BoolUnwrapping(cond), thenn, elze) =>
         assert(cond.isProcessedOf[Boolean])
-        assert(thenn.isProcessedOf[Any])
-        assert(elze.isProcessedOf[Any])
+        if !thenn.isProcessedOf[Any] || !elze.isProcessedOf[Any] then
+          report.errorAndAbort("Cannot use proto-if-then-else to return meta-values.", t.pos)
         val pCond = transformTerm(cond)(owner)
         val pThen = transformTerm(thenn)(owner)
         val pElse = transformTerm(elze)(owner)

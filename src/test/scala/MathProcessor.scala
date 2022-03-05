@@ -2,35 +2,50 @@ import utest.*
 import exproc.*
 import exproc.{Identifier => Id}
 
-sealed trait MathExpr[+T]
-case class Variable[+T](id: Identifier) extends MathExpr[T]
-case class Constant(i: Int) extends MathExpr[Int]
-case class Assign[T](to: Variable[T], v: MathExpr[T]) extends MathExpr[Unit]
-case class Plus(lhs: MathExpr[Int], rhs: MathExpr[Int]) extends MathExpr[Int]
-case class Minus(lhs: MathExpr[Int], rhs: MathExpr[Int]) extends MathExpr[Int]
-case class Sequence[+T](first: MathExpr[?], second: MathExpr[T]) extends MathExpr[T]
-case class If[+T](cond: MathExpr[Boolean], thenn: MathExpr[T], elze: MathExpr[T]) extends MathExpr[T]
-case class While(cond: MathExpr[Boolean], body: MathExpr[Any]) extends MathExpr[Unit]
-case class Eq[+T](lhs: MathExpr[T], rhs: MathExpr[T]) extends MathExpr[Boolean]
+object MathAST {
+  sealed trait MathExpr[+T]
+  case class Variable[+T](id: Identifier) extends MathExpr[T]
+  case class Constant(i: Int) extends MathExpr[Int]
+  case class Assign[T](to: Variable[T], v: MathExpr[T]) extends MathExpr[Unit]
+  case class Plus(lhs: MathExpr[Int], rhs: MathExpr[Int]) extends MathExpr[Int]
+  case class Minus(lhs: MathExpr[Int], rhs: MathExpr[Int]) extends MathExpr[Int]
+  case class Sequence[+T](first: MathExpr[?], second: MathExpr[T]) extends MathExpr[T]
+  case class If[+T](cond: MathExpr[Boolean], thenn: MathExpr[T], elze: MathExpr[T]) extends MathExpr[T]
+  case class While(cond: MathExpr[Boolean], body: MathExpr[Any]) extends MathExpr[Unit]
+  case class Eq[+T](lhs: MathExpr[T], rhs: MathExpr[T]) extends MathExpr[Boolean]
 
-extension [T](v: Variable[T]) {
-  def :=(m: MathExpr[T]) = Assign(v, m)
 }
 
-extension (m: MathExpr[Int]) {
-  def +(n: MathExpr[Int]) = Plus(m, n)
-  def -(n: MathExpr[Int]) = Minus(m, n)
-}
+object math extends Processor[MathAST.MathExpr, MathAST.Variable] {
+  import MathAST.*
 
-extension [T](m: MathExpr[T]) {
-  def ===(n: MathExpr[T]) = Eq(m, n)
-}
+  /*
+   * DSL
+   */
+  extension [T](v: Variable[T]) {
+    def :=(m: MathExpr[T]) = Assign(v, m)
+  }
 
-object VariableName {
-  def unapply[T](v: Variable[T]): Option[String] = Identifier.unapply(v.id)
-}
+  extension (m: MathExpr[Int]) {
+    def +(n: MathExpr[Int]) = Plus(m, n)
+    def -(n: MathExpr[Int]) = Minus(m, n)
+  }
 
-object MathProcessor extends Processor[MathExpr, Variable] {
+  extension [T](m: MathExpr[T]) {
+    def ===(n: MathExpr[T]) = Eq(m, n)
+  }
+
+  object VariableName {
+    def unapply[T](v: Variable[T]): Option[String] = Identifier.unapply(v.id)
+  }
+
+
+  given Conversion[Boolean, MathExpr[Int]] with
+    def apply(b: Boolean) = if b then Constant(1) else Constant(0)
+
+  /*
+   * Processor
+   */
 
   override def variable[T](id: Identifier): Variable[T] = Variable[T](id)
   override def initializer[T](va: Variable[T], init: MathExpr[T]) = va := init
@@ -40,19 +55,16 @@ object MathProcessor extends Processor[MathExpr, Variable] {
   override def sequence[T](ls: Seq[MathExpr[Any]], last: MathExpr[T]) = ls.foldRight(last)(Sequence(_, _))
   override def ifThenElse[T](cond: MathExpr[Boolean], thenn: MathExpr[T], elze: MathExpr[T]) = If(cond, thenn, elze)
   override def whileLoop(cond: MathExpr[Boolean], body: MathExpr[Any]) = While(cond, body)
-
-  given Conversion[Boolean, MathExpr[Int]] with
-    def apply(b: Boolean) = if b then Constant(1) else Constant(0)
 }
 
-inline def math[T](inline expr: MathExpr[T]): MathExpr[T] = MathProcessor(expr)
-
-inline def mathAssert[T](inline expr: MathExpr[T])(inline expected: PartialFunction[Any, Unit]): Unit = 
+inline def mathAssert[T](inline expr: MathAST.MathExpr[T])(inline expected: PartialFunction[Any, Unit]): Unit = 
   val result = math(expr)
   assertMatch( result )( expected )
 
 object MathProcessorTests extends TestSuite {
-  import MathProcessor.{*,given}
+  import MathAST.*
+  import math.{*,given}
+
 
   val tests = Tests {
     test("DSL") {
@@ -105,8 +117,8 @@ object MathProcessorTests extends TestSuite {
     }
     test("optional-features") {
       test("empty") {
-        val err = intercept[MissingFeature](math{
-          ()
+        val err = intercept[UnsupportedFeature](math{
+          () // MathProcessor doesn't define empty
         })
         assert(err.toString.contains("Missing feature"))
         assert(err.toString.contains("empty"))
@@ -152,37 +164,57 @@ object MathProcessorTests extends TestSuite {
     test("meta-control-flow") {
       test("if-then-else") {
         mathAssert{
-          val b = true
-          if b then Constant(1) else Constant(0)
+          val b = false
+          if (if b then false else true) then 
+            Constant(1) 
+          else 
+            Constant(0)
         }{case 
           Constant(1)
         =>}
       }
     }
     test("errors") {
-      test("bool-unwrap-abuse") {
-        val err = compileError("""math{
-          val x: Variable[Int] = 0
-          if x === Constant(0) then Constant(0) else Constant(1)
-          val b: Boolean = x === Constant(0)
-        }""")
-        assert(err.msg.contains("being converted"))
-        assert(err.msg.contains("if/while"))
+      test("features-abuse") {
+        test("bool-unwrap") {
+          val err = compileError("""math{
+            val x: Variable[Int] = 0
+            if x === Constant(0) then Constant(0) else Constant(1)
+            val b: Boolean = x === Constant(0)
+          }""")
+          assert(err.msg.contains("being converted"))
+          assert(err.msg.contains("if/while"))
+        }
+        test("initializer-as-conversion") {
+          val err = compileError("""math{
+            val x: Variable[Int] = 0
+            x := true   // Ok: an additional conversion was defined as part of the DSL
+            x := 1      // Error: default conversion used, which is reserved for variables initialization
+          }""")
+          assert(err.msg.contains("1"))
+          assert(err.msg.contains("not of type MathExpr"))
+        }
+        test("top-level-initializer") {
+          val err = compileError("""math{
+            1
+          }""")
+          assert(err.msg.contains("1"))
+          assert(err.msg.contains("not of type MathExpr"))
+        }
       }
-      test("initializer-abuse") {
-        val err = compileError("""math{
-          val x: Variable[Int] = 0
-          x := 1
-        }""")
-        assert(err.msg.contains("1"))
-        assert(err.msg.contains("not of type MathExpr"))
-      }
-      test("top-level-initializer") {
-        val err = compileError("""math{
-          1
-        }""")
-        assert(err.msg.contains("1"))
-        assert(err.msg.contains("not of type MathExpr"))
+      test("invalid-proto-flow") {
+        // Constructs of the form `if <proto/> then <meta/> else <meta/>`
+        test("if-then-else") {
+          val err = compileError("""math{
+            if Constant(0) === Constant(0) then
+              1
+            else
+              0
+            Constant(0)
+          }""")
+          assert(err.msg.contains("proto-if-then-else"))
+          assert(err.msg.contains("meta-value"))
+        }
       }
     }
     test("variable-shadowing") {

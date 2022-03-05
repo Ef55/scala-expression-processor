@@ -1,5 +1,7 @@
 val scala3Version = "3.1.1"
 
+
+
 lazy val root = project
   .in(file("."))
   .settings(
@@ -12,4 +14,8 @@ lazy val root = project
     libraryDependencies += "com.lihaoyi" %% "utest" % "0.7.10" % "test",
 
     testFrameworks += new TestFramework("utest.runner.Framework"),
+
+    Compile / doc / scalacOptions ++= Seq(
+      "-groups"
+    ),
   )
