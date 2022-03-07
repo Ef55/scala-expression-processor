@@ -275,7 +275,7 @@ object MathProcessorTests extends TestSuite {
       }
     }
 
-    //test("WIP") {
+    test("WIP") {
       // test("for") {
       //   mathAssert{
       //     for i <- 0 until 3 do
@@ -284,7 +284,14 @@ object MathProcessorTests extends TestSuite {
       //     PartialFunction.empty
       //   }
       // }
-    //}
+      // test("variable-assignation") {
+      //   math{
+      //     var x = Constant(0)
+      //     x = Constant(1)
+      //     x
+      //   }
+      // }
+    }
   }
 
 }

@@ -341,12 +341,16 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
           case InitializationExpressionUnwrapping(init, _) => init
           case _ => initializer
         
-        val va = 
-          processor.variable(typ)('{Identifier(${Expr(name)})}.asTerm)
+        val vd = 
+          ValDef.copy(s)(
+            name,
+            tt,
+            Some(processor.variable(typ)('{Identifier(${Expr(name)})}.asTerm))
+          )
         List(
-          ValDef.copy(s)(name, tt, Some(va)),   // Meta-variable definition
-          processor.initializer(typ)(           // Proto-variable definition
-            va,
+          vd,                           // Meta-variable definition
+          processor.initializer(typ)(   // Proto-variable definition
+            Ref(vd.symbol),
             init
           )
         )
@@ -440,5 +444,5 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
 
   //println(s"Input:\n${expr.asTerm.show}")
   val r = Transform.transformTerm(expr.asTerm)(Symbol.spliceOwner).asExprOf[Processed[T]]
-  //println(s"Processed:\n${r.asTerm.show}")
+  println(s"Processed:\n${r.asTerm.show}")
   r
