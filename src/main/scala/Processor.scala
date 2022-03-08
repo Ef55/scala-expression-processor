@@ -347,14 +347,16 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
     override def transformStatement(s: Statement)(owner: Symbol) = 
       throw ExpressionProcessorImplementationError("Method should not have been called.")
 
+    def transformAssignee(t: Term)(owner: Symbol): Term = t match 
+      case InitializationConstantUnwrapping(init, typ) => processor.constant(typ)(transformTerm(init)(owner))
+      case InitializationExpressionUnwrapping(init, _) => transformTerm(init)(owner)
+      case _ => transformTerm(t)(owner)
+
     def transformToStatements(s: Statement)(owner: Symbol): List[Statement] = s match 
       // /!\ Hardline /!\
       case t: Term if t.isProcessed || t.isExprOf[Unit] => List(transformTerm(t)(owner))
       case ValDef(name, tt@ProcessedParameterTT(typ), Some(initializer)) =>
-        val init = initializer match 
-          case InitializationConstantUnwrapping(init, typ) => processor.constant(typ)(init)
-          case InitializationExpressionUnwrapping(init, _) => init
-          case _ => initializer
+        val init = transformAssignee(initializer)(owner)
         
         if s.symbol.flags.is(Flags.Lazy) then 
           report.warning("Lazy is ignored for value definitions.")
