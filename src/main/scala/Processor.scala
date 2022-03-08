@@ -234,6 +234,10 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
     val symbol = TypeRepr.of[Processor].typeSymbol
     val term = processorExpr.asTerm
 
+    private val typeName = TypeRepr.of[Processed].typeSymbol.name
+    val typeNameT = s"${typeName}[T]"
+    def parametrizedTypeName[S](using Type[S]) = s"${typeName}[${TypeRepr.of[S].typeSymbol.name}]"
+
     def variable(t: TypeRepr)(id: Term): Term = 
       member("variable").appliedToType(t).appliedTo(id)
     def initializer(t: TypeRepr)(va: Term, init: Term): Term = 
@@ -264,6 +268,8 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
     def isExprOf[S](using Type[S]): Boolean = t.tpe <:< TypeRepr.of[S]
 
     def isProcessedOf[S](using Type[S]): Boolean = isExprOf[Processed[S]]
+
+    def isProcessed: Boolean = isProcessedOf[Any]
   }
 
 
@@ -286,6 +292,13 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
       case _ => None 
     }
   }
+  def forceBoolUnwrapping(t: Term)(constructName: String): Term = t match
+    case BoolUnwrapping(cond) => cond
+    case _ => 
+      report.errorAndAbort(
+        s"The condition of ${constructName} should have type ${processor.parametrizedTypeName[Boolean]}",
+        t.pos
+      )
 
   object InitializationConstantUnwrapping {
     def unapply(t: Term): Option[(Term, TypeRepr)] = t match {
@@ -335,12 +348,21 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
       throw ExpressionProcessorImplementationError("Method should not have been called.")
 
     def transformToStatements(s: Statement)(owner: Symbol): List[Statement] = s match 
+      // /!\ Hardline /!\
+      case t: Term if t.isProcessed || t.isExprOf[Unit] => List(transformTerm(t)(owner))
       case ValDef(name, tt@ProcessedParameterTT(typ), Some(initializer)) =>
         val init = initializer match 
           case InitializationConstantUnwrapping(init, typ) => processor.constant(typ)(init)
           case InitializationExpressionUnwrapping(init, _) => init
           case _ => initializer
         
+        if s.symbol.flags.is(Flags.Lazy) then 
+          report.warning("Lazy is ignored for value definitions.")
+        if s.symbol.flags.is(Flags.Inline) then
+          report.warning("Inline is ignored for value definitions.")
+        if s.symbol.flags.is(Flags.Mutable) then
+          report.warning("Var are currently considered as val.")
+
         val vd = 
           ValDef.copy(s)(
             name,
@@ -354,7 +376,13 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
             init
           )
         )
-      case _ => List(super.transformStatement(s)(owner))
+      // /!\ Hardline /!\
+      case _ => 
+        report.errorAndAbort(
+          s"${s.show}: only val/var definitions of type ${processor.typeNameT} are valid statements.",
+          s.pos
+        )
+      //case _ => List(super.transformStatement(s)(owner))
 
     override def transformStats(ls: List[Statement])(owner: Symbol): List[Statement] =
       ls.flatMap(transformToStatements(_)(owner))
@@ -368,9 +396,11 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
       (pStatements, exprs)
 
     override def transformTerm(t: Term)(owner: Symbol): Term = t match 
-
       case InitializationConstantUnwrapping(Literal(UnitConstant()), _) =>
         processor.empty
+
+      case InitializationConstantUnwrapping(a: Assign, _) =>
+        transformTerm(a)(owner)
 
       case Block(statements, InitializationConstantUnwrapping(Literal(UnitConstant()), _)) =>
         val (pStatements, exprs) = splitStatements(statements)(owner)
@@ -385,7 +415,7 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
 
       case InitializationConstantUnwrapping(t, typ) =>
         report.errorAndAbort(
-          s"${t.show}: ${typ.show} is not of type ${TypeRepr.of[Processed].typeSymbol.name}[T]",
+          s"${t.show}: ${typ.show} is not of type ${processor.typeNameT}",
           t.pos
         )
       
@@ -408,11 +438,8 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
           )
         )
 
-      case If(BoolUnwrapping(cond), thenn, elze) =>
-        assert(cond.isProcessedOf[Boolean])
-        if !thenn.isProcessedOf[Any] || !elze.isProcessedOf[Any] then
-          report.errorAndAbort("Cannot use proto-if-then-else to return meta-values.", t.pos)
-        val pCond = transformTerm(cond)(owner)
+      case If(cond, thenn, elze) =>
+        val pCond = transformTerm(forceBoolUnwrapping(cond)("an if-then-else"))(owner)
         val pThen = transformTerm(thenn)(owner)
         val pElse = transformTerm(elze)(owner)
         val ProcessedParameter(typ) = t.tpe
@@ -422,13 +449,12 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
           pElse
         )
 
-      case While(BoolUnwrapping(cond), Block(statements, Literal(UnitConstant()))) =>
+      case While(cond, Block(statements, Literal(UnitConstant()))) =>
         /* Note: this case handles the full `<while> cond <block> statements () </block> </while>`
          * at once to avoid an unnecessary call to `processor.empty`
          */
-        
-        assert(cond.isProcessedOf[Boolean])
-        val pCond = transformTerm(cond)(owner)
+        val pCond = transformTerm(forceBoolUnwrapping(cond)("a while"))(owner)
+          
         val (pStatements, exprs) = splitStatements(statements)(owner)
 
         Block(
@@ -439,10 +465,15 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
           )
         )
 
+      case Assign(_, _) | Try(_, _, _) => 
+        report.errorAndAbort(
+          s"Unsupported construct.",
+          t.pos
+        )
       case _ => super.transformTerm(t)(owner)
   }
 
   //println(s"Input:\n${expr.asTerm.show}")
   val r = Transform.transformTerm(expr.asTerm)(Symbol.spliceOwner).asExprOf[Processed[T]]
-  println(s"Processed:\n${r.asTerm.show}")
+  //println(s"Processed:\n${r.asTerm.show}")
   r

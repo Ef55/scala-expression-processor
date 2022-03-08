@@ -155,7 +155,7 @@ object MathProcessorTests extends TestSuite {
         assert(err.toString.contains("empty"))
       }
     }
-    test("proto-control-flow") {
+    test("control-flow") {
       test("if-then-else") {
         mathAssert{
           val x: Variable[Int] = 0
@@ -192,30 +192,8 @@ object MathProcessorTests extends TestSuite {
         =>}
       }
     }
-    test("meta-control-flow") {
-      test("if-then-else") {
-        mathAssert{
-          val b = false
-          if (if b then false else true) then 
-            Constant(1) 
-          else 
-            Constant(0)
-        }{case 
-          Constant(1)
-        =>}
-      }
-    }
     test("errors") {
       test("features-abuse") {
-        test("bool-unwrap") {
-          val err = compileError("""math{
-            val x: Variable[Int] = 0
-            if x === Constant(0) then Constant(0) else Constant(1)
-            val b: Boolean = x === Constant(0)
-          }""")
-          assert(err.msg.contains("being converted"))
-          assert(err.msg.contains("if/while"))
-        }
         test("initializer-as-conversion") {
           val err = compileError("""math{
             val x: Variable[Int] = 0
@@ -233,18 +211,57 @@ object MathProcessorTests extends TestSuite {
           assert(err.msg.contains("not of type MathExpr"))
         }
       }
-      test("invalid-proto-flow") {
-        // Constructs of the form `if <proto/> then <meta/> else <meta/>`
-        test("if-then-else") {
+      test("hardline") {
+        test("val-def") {
           val err = compileError("""math{
-            if Constant(0) === Constant(0) then
-              1
-            else
-              0
+            val x = true
+          }""")
+          assert(err.msg.contains("val/var"))
+          assert(err.msg.contains("type MathExpr[T]"))
+        }
+        test("fun-def") {
+          val err = compileError("""math{
+            def f = ???
             Constant(0)
           }""")
-          assert(err.msg.contains("proto-if-then-else"))
-          assert(err.msg.contains("meta-value"))
+          assert(err.msg.contains("only"))
+          assert(err.msg.contains("statements"))
+        }
+        test("if-then-else") {
+          val err = compileError("""math{
+            if true then 
+              Constant(1)
+            else
+              Constant(0)
+          }""")
+          assert(err.msg.contains("if-then-else"))
+          assert(err.msg.contains("type MathExpr[Boolean]"))
+        }
+        test("while") {
+          val err = compileError("""math{
+            val x: Variable[Int] = 0
+            while 1 < 2 do
+              x := x - Constant(1)
+            x
+          }""")
+          assert(err.msg.contains("while"))
+          assert(err.msg.contains("type MathExpr[Boolean]"))
+        }
+        test("assign") {
+          val err = compileError("""math{
+            var x: Variable[Boolean] = true
+            x = Variable(Identifier("new"))
+          }""")
+          assert(err.msg.contains("Unsupported construct"))
+        }
+        test("try") {
+          val err = compileError("""math{
+            try Constant(0)
+            catch {
+              case _ => ???
+            }
+          }""")
+          assert(err.msg.contains("Unsupported construct"))
         }
       }
     }
@@ -290,6 +307,43 @@ object MathProcessorTests extends TestSuite {
       //     x = Constant(1)
       //     x
       //   }
+      // }
+      // test("invalid-proto-flow") {
+      //   // Constructs of the form `if <proto/> then <meta/> else <meta/>`
+      //   test("if-then-else") {
+      //     val err = compileError("""math{
+      //       if Constant(0) === Constant(0) then
+      //         1
+      //       else
+      //         0
+      //       Constant(0)
+      //     }""")
+      //     assert(err.msg.contains("proto-if-then-else"))
+      //     assert(err.msg.contains("meta-value"))
+      //   }
+      // }
+      // test("bool-unwrap") {
+      //   val err = compileError("""
+      //     val f(b : Boolean): MathExpr[Boolean] = ???
+      //     math{
+      //       val x: Variable[Int] = 0
+      //       if x === Constant(0) then Constant(0) else Constant(1)
+      //       f(x === Constant(0))
+      //     }
+      //   """)
+      //   assert(err.msg.contains("being converted"))
+      //   assert(err.msg.contains("if/while"))
+      // }
+      // test("if-then-else") {
+      //   val b = false
+      //   mathAssert{
+      //     if (if b then false else true) then 
+      //       Constant(1) 
+      //     else 
+      //       Constant(0)
+      //   }{case 
+      //     Constant(1)
+      //   =>}
       // }
     }
   }
