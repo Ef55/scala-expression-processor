@@ -362,8 +362,6 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
           report.warning("Lazy is ignored for value definitions.")
         if s.symbol.flags.is(Flags.Inline) then
           report.warning("Inline is ignored for value definitions.")
-        if s.symbol.flags.is(Flags.Mutable) then
-          report.warning("Var are currently considered as val.")
 
         val vd = 
           ValDef.copy(s)(
@@ -467,7 +465,15 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
           )
         )
 
-      case Assign(_, _) | Try(_, _, _) => 
+      case Assign(lhs, rhs) => 
+        /* The hardline approach allows to assume that
+         * `lhs: Variable[T]`
+         */
+        val assignee = transformAssignee(rhs)(owner)
+        val ProcessedParameter(typ) = lhs.tpe
+        processor.initializer(typ)(lhs, assignee)
+
+      case Try(_, _, _) => 
         report.errorAndAbort(
           s"Unsupported construct.",
           t.pos

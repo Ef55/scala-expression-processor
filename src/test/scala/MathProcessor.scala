@@ -153,6 +153,21 @@ object MathProcessorTests extends TestSuite {
           )
         =>}
       }
+      test("assignation") {
+        mathAssert{
+          var x: Variable[Int] = 0
+          x = 1
+          x
+        }{case 
+          Sequence(
+            Assign(VariableName("x"), Constant(0)),
+            Sequence(
+              Assign(VariableName("x"), Constant(1)),
+              VariableName("x")
+            )
+          )
+        =>}
+      }
     }
     test("sequencing") {
       mathAssert{
@@ -265,13 +280,6 @@ object MathProcessorTests extends TestSuite {
           }""")
           assert(err.msg.contains("while"))
           assert(err.msg.contains("type MathExpr[Boolean]"))
-        }
-        test("assign") {
-          val err = compileError("""math{
-            var x: Variable[Boolean] = true
-            x = Variable(Identifier("new"))
-          }""")
-          assert(err.msg.contains("Unsupported construct"))
         }
         test("try") {
           val err = compileError("""math{
