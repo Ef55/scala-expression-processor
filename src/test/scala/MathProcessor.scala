@@ -1,6 +1,6 @@
-import utest.*
 import exproc.*
 import exproc.{Identifier => Id}
+import utest.*
 
 object MathAST {
   sealed trait MathExpr[+T]
@@ -13,11 +13,11 @@ object MathAST {
   case class If[+T](cond: MathExpr[Boolean], thenn: MathExpr[T], elze: MathExpr[T]) extends MathExpr[T]
   case class While(cond: MathExpr[Boolean], body: MathExpr[Any]) extends MathExpr[Unit]
   case class Eq[+T](lhs: MathExpr[T], rhs: MathExpr[T]) extends MathExpr[Boolean]
-
 }
 
 object math extends Processor[MathAST.MathExpr, MathAST.Variable] {
   import MathAST.*
+  given Processor[MathAST.MathExpr, MathAST.Variable] = this
 
   /*
    * DSL
@@ -57,13 +57,11 @@ object VariableName {
   def unapply[T](v: MathAST.Variable[T]): Option[String] = Identifier.unapply(v.id)
 }
 
-inline def mathAssert[T](inline expr: MathAST.MathExpr[T])(inline expected: PartialFunction[Any, Unit]): Unit = 
-  val result = math(expr)
-  assertMatch( result )( expected )
 
 object MathProcessorTests extends TestSuite {
   import MathAST.*
   import math.{*,given}
+  import processAssertions.{processMatchAssert => mathAssert, processCompileError => mathError}
 
 
   val tests = Tests {
@@ -232,28 +230,40 @@ object MathProcessorTests extends TestSuite {
     test("errors") {
       test("features-abuse") {
         test("bool-unwrap") {
-          val err = compileError("""math{
+          mathError{
             val x: Variable[Int] = 0
             if x === Constant(0) then Constant(0) else Constant(1)
             val b: Boolean = x === Constant(0)
-          }""")
-          assert(err.msg.contains("Invalid conversion"))
-          assert(err.msg.contains("Boolean"))
-          assert(err.msg.contains("if/while"))
+          }{msg =>
+            assert(msg.contains("Invalid conversion"))
+            assert(msg.contains("Boolean"))
+            assert(msg.contains("if/while"))
+          }
+        }
+        test("variable-conversion") {
+          mathError{
+            def f(v: Variable[Int]): Variable[Int] = v
+
+            f(0)
+          }{msg =>
+            assert(msg.contains("Invalid conversion"))
+            assert(msg.contains("Variable[scala.Int]"))
+          }
         }
       }
       test("invalid-proto-flow") {
         // Constructs of the form `if <proto/> then <meta/> else <meta/>`
         test("if-then-else") {
-          val err = compileError("""math{
+          mathError{
             if Constant(0) === Constant(0) then
               1
             else
               0
             Constant(0)
-          }""")
-          assert(err.msg.contains("proto-if-then-else"))
-          assert(err.msg.contains("meta-value"))
+          }{msg =>
+            assert(msg.contains("proto-if-then-else"))
+            assert(msg.contains("meta-value"))
+          }
         }
       }
     }

@@ -249,6 +249,8 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
     def isExprOf[S](using Type[S]): Boolean = t.tpe <:< TypeRepr.of[S]
 
     def isProcessedOf[S](using Type[S]): Boolean = isExprOf[Processed[S]]
+
+    def isProcessed: Boolean = isProcessedOf[Any]
   }
 
 
@@ -272,18 +274,10 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
     }
   }
 
-  object InitializationConstantUnwrapping {
+  object InitializerUnwrapping {
     def unapply(t: Term): Option[(Term, TypeRepr)] = t match {
       case ImplicitConversion(converted, from, to) 
-        if TypeRepr.of[Variable].appliedTo(from) <:< to => Some((converted, from))
-      case _ => None 
-    }
-  }
-
-  object InitializationExpressionUnwrapping {
-    def unapply(t: Term): Option[(Term, TypeRepr)] = t match {
-      case ImplicitConversion(converted, ProcessedParameter(typ), to) 
-        if TypeRepr.of[Variable].appliedTo(typ) <:< to => Some((converted, TypeRepr.of[Processed].appliedTo(typ)))
+        if to <:<  TypeRepr.of[Any] => Some((converted, from))
       case _ => None 
     }
   }
@@ -319,10 +313,12 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
     override def transformStatement(s: Statement)(owner: Symbol) = 
       throw ExpressionProcessorImplementationError("Method should not have been called.")
 
-    def transformAssignee(t: Term)(owner: Symbol): Term = t match 
-      case InitializationConstantUnwrapping(init, typ) => processor.constant(typ)(transformTerm(init)(owner))
-      case InitializationExpressionUnwrapping(init, _) => transformTerm(init)(owner)
-      case _ => transformTerm(t)(owner)
+    def transformAssignee(t: Term)(owner: Symbol): Term = {
+      t match 
+        case InitializerUnwrapping(init, from) if from <:< TypeRepr.of[Processed[Any]] => init
+        case InitializerUnwrapping(init, from) => processor.constant(from)(transformTerm(init)(owner))
+        case _ => transformTerm(t)(owner)
+    }.ensuring(_.isProcessed)
 
     def transformToStatements(s: Statement)(owner: Symbol): List[Statement] = s match 
       case ValDef(name, tt@ProcessedParameterTT(typ), Some(initializer)) =>
@@ -370,15 +366,9 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
           t.pos
         )
 
-      case InitializationConstantUnwrapping(t, typ) =>
+      case InitializerUnwrapping(t, from) =>
         report.errorAndAbort(
-          s"Invalid conversion to ${processor.variableType(typ)}",
-          t.pos
-        )
-
-      case InitializationExpressionUnwrapping(t, typ) =>
-        report.errorAndAbort(
-          s"Invalid conversion to ${processor.variableType(typ)}",
+          s"Invalid conversion to ${processor.variableType(from)}",
           t.pos
         )
       
