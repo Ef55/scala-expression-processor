@@ -94,32 +94,32 @@ object MathProcessorTests extends TestSuite {
           )
         =>}
       }
-      // test("bool-to-constant") {
-      //   mathAssert{
-      //     var x: Variable[Int] = 0
-      //     x = true
-      //   }{ case
-      //     Sequence(
-      //       Initialize(VariableName("x"), Constant(0)),
-      //       Assign(VariableName("x"), Constant(1))
-      //     )
-      //   =>}
-      // }
-      // test("re-assignation") {
-      //   mathAssert{
-      //     var x: Variable[Int] = 0
-      //     x = true
-      //     x = 2
-      //   }{ case
-      //     Sequence(
-      //       Initialize(VariableName("x"), Constant(0)),
-      //       Sequence(
-      //         Assign(VariableName("x"), Constant(1)),
-      //         Assign(VariableName("x"), Constant(2))
-      //       )
-      //     )
-      //   =>}
-      // }
+      test("bool-to-constant") {
+        mathAssert{
+          var x: Variable[Int] = 0
+          x = true
+        }{ case
+          Sequence(
+            Initialize(VariableName("x"), Constant(0)),
+            Assign(VariableName("x"), Constant(1))
+          )
+        =>}
+      }
+      test("re-assignation") {
+        mathAssert{
+          var x: Variable[Int] = 0
+          x = true
+          x = 2
+        }{ case
+          Sequence(
+            Initialize(VariableName("x"), Constant(0)),
+            Sequence(
+              Assign(VariableName("x"), Constant(1)),
+              Assign(VariableName("x"), Constant(2))
+            )
+          )
+        =>}
+      }
     }
     test("variables") {
       test("constant-init") {

@@ -280,9 +280,13 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
   }
 
   object InitializerUnwrapping {
-    def unapply(t: Term): Option[(Term, TypeRepr, TypeRepr)] = t match {
-      case ImplicitConversion(_, converted, from, to) 
-        if to <:< TypeRepr.of[Variable[Any]] => Some((converted, from, to))
+    def unapply(t: Term): Option[(Term, Option[Term], TypeRepr, TypeRepr)] = t match {
+      case ImplicitConversion(conv, converted, from, to) 
+        if to <:< TypeRepr.of[Variable[Any]] => 
+          val arg = conv match 
+            case Apply(_, arg :: Nil) => Some(arg)
+            case _ => None
+          Some((converted, arg, from, to))
       case _ => None 
     }
   }
@@ -328,8 +332,9 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
 
     def transformAssignee(t: Term)(owner: Symbol): Term = {
       t match 
-        case InitializerUnwrapping(init, from, _) if from <:< TypeRepr.of[Processed[Any]] => init
-        case InitializerUnwrapping(init, from, ProcessedParameter(to)) => processor.constant(from)(transformTerm(init)(owner))
+        case InitializerUnwrapping(init, None, from, _) /*if from <:< TypeRepr.of[Processed[Any]]*/ => init
+        case InitializerUnwrapping(init, Some(arg), from, ProcessedParameter(to)) =>
+          Select.unique(arg, "apply").appliedTo(transformTerm(init)(owner))
         case _ => transformTerm(t)(owner)
     }.ensuring(_.isProcessed)
 
@@ -386,7 +391,7 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
           t.pos
         )
 
-      case InitializerUnwrapping(t, from, _) =>
+      case InitializerUnwrapping(t, _, from, _) =>
         report.errorAndAbort(
           s"Invalid conversion to ${processor.variableType(from)}",
           t.pos
