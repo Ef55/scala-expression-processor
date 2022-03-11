@@ -50,8 +50,7 @@ trait TypeTricker[Processed[+_], Variable[+t] <: Processed[t]] {
     * 
     * @group dsl
     */
-  given variableConstantInitialization[T](using Conversion[T, Processed[T]]): Conversion[T, Variable[T]] = 
-    // Using to lower priority
+  given variableConstantInitialization[T, S](using cv: Conversion[T, Processed[S]]): Conversion[T, Variable[S]] =
     conversionToBeErased("Conversion[T, Processed[T]]")
 
   /** Converts a processed value (i.e. an AST) into a variable
@@ -129,7 +128,9 @@ trait Processor[Processed[+_], Variable[+t] <: Processed[t]] extends TypeTricker
     * 
     * @group cstr
     */
-  def initializer[T](va: Variable[T], init: Processed[T]): Processed[Unit]
+  def initialize[T](va: Variable[T], init: Processed[T]): Processed[Unit]
+
+  def assign[T](va: Variable[T], init: Processed[T]): Processed[Unit]
 
   /** Constructs a constant.
     * 
@@ -222,8 +223,10 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
 
     def variable(t: TypeRepr)(id: Term): Term = 
       member("variable").appliedToType(t).appliedTo(id)
-    def initializer(t: TypeRepr)(va: Term, init: Term): Term = 
-      member("initializer").appliedToType(t).appliedToArgs(List(va, init))
+    def initialize(t: TypeRepr)(va: Term, init: Term): Term = 
+      member("initialize").appliedToType(t).appliedToArgs(List(va, init))
+    def assign(t: TypeRepr)(va: Term, init: Term): Term = 
+      member("assign").appliedToType(t).appliedToArgs(List(va, init))
     def constant(t: TypeRepr)(cst: Term): Term = 
       member("constant").appliedToType(t).appliedTo(cst)
     def sequence(t: TypeRepr)(fsts: Term, last: Term): Term = 
@@ -251,35 +254,45 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
     def isProcessedOf[S](using Type[S]): Boolean = isExprOf[Processed[S]]
 
     def isProcessed: Boolean = isProcessedOf[Any]
+
+    def isVariable: Boolean = isExprOf[Variable[Any]]
   }
 
 
   object ImplicitConversion {
-    def unapply(t: Term): Option[(Term, TypeRepr, TypeRepr)] = t match 
+    def unapply(t: Term): Option[(Term, Term, TypeRepr, TypeRepr)] = t match 
       case a@Apply(Select(conversion, "apply"), arg :: Nil) => 
         val convKind = TypeRepr.of[Conversion]
         val conv = convKind.appliedTo(List(arg.tpe, a.tpe))
-        if conv.typeSymbol == conversion.tpe.typeSymbol && conversion.symbol.flags.is(Flags.Given) then
-          Some((arg, arg.tpe, a.tpe))
+        if conversion.tpe <:< conv && conversion.symbol.flags.is(Flags.Given) then
+          Some((conversion, arg, arg.tpe, a.tpe))
         else 
-          None
+         None
       case _ => None
   }
 
   object BoolUnwrapping {
     def unapply(t: Term): Option[Term] = t match {
-      case ImplicitConversion(converted, from, to) 
+      case ImplicitConversion(_, converted, from, to) 
         if from <:< TypeRepr.of[Processed[Boolean]] && to =:= TypeRepr.of[Boolean] => Some(converted)
       case _ => None 
     }
   }
 
   object InitializerUnwrapping {
-    def unapply(t: Term): Option[(Term, TypeRepr)] = t match {
-      case ImplicitConversion(converted, from, to) 
-        if to <:<  TypeRepr.of[Any] => Some((converted, from))
+    def unapply(t: Term): Option[(Term, TypeRepr, TypeRepr)] = t match {
+      case ImplicitConversion(_, converted, from, to) 
+        if to <:< TypeRepr.of[Variable[Any]] => Some((converted, from, to))
       case _ => None 
     }
+  }
+
+  object AutoConstantUnwrapping {
+    def unapply(t: Term): Option[Term] =
+      t match 
+        case ImplicitConversion(_, converted, from, to)
+          if to <:< TypeRepr.of[Processed].appliedTo(from) => Some(converted)
+        case _ => None
   }
 
   object ProcessedParameterTT {
@@ -315,8 +328,8 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
 
     def transformAssignee(t: Term)(owner: Symbol): Term = {
       t match 
-        case InitializerUnwrapping(init, from) if from <:< TypeRepr.of[Processed[Any]] => init
-        case InitializerUnwrapping(init, from) => processor.constant(from)(transformTerm(init)(owner))
+        case InitializerUnwrapping(init, from, _) if from <:< TypeRepr.of[Processed[Any]] => init
+        case InitializerUnwrapping(init, from, ProcessedParameter(to)) => processor.constant(from)(transformTerm(init)(owner))
         case _ => transformTerm(t)(owner)
     }.ensuring(_.isProcessed)
 
@@ -340,7 +353,7 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
           )
         List(
           vd,                           // Meta-variable definition
-          processor.initializer(typ)(   // Proto-variable definition
+          processor.initialize(typ)(   // Proto-variable definition
             Ref(vd.symbol),
             init
           )
@@ -352,11 +365,11 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
 
     def splitStatements(statements: List[Statement])(owner: Symbol): (List[Statement], List[Expr[Processed[Any]]]) =
       val pStatements = transformStats(statements)(owner)
-      val exprs = pStatements.collect{
-        case t: Term if t.isProcessedOf[Any] => t.asExprOf[Processed[Any]]
+      pStatements.foldRight[(List[Statement], List[Expr[Processed[Any]]])]((Nil, Nil)){ 
+        case (statement, (statements, exprs)) => statement match
+          case t: Term if t.isProcessed => (statements, t.asExprOf[Processed[Any]] :: exprs)
+          case _ => (statement :: statements, exprs)
       }
-      //val remStatements = pStatements.filter(s => !s.isInstanceOf[Term] || !s.asInstanceOf[Term].isProcessed)
-      (pStatements, exprs)
 
     def pushConstant(t: Term)(tpe: TypeRepr): Term = {
       t match
@@ -367,22 +380,23 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
     }
 
     override def transformTerm(t: Term)(owner: Symbol): Term = t match 
-
       case BoolUnwrapping(t) => 
         report.errorAndAbort(
           s"Invalid conversion to Boolean; it is only allowed in the condition of a if/while.",
           t.pos
         )
 
-      case InitializerUnwrapping(t, from) =>
+      case InitializerUnwrapping(t, from, _) =>
         report.errorAndAbort(
           s"Invalid conversion to ${processor.variableType(from)}",
           t.pos
         )
       
+      case AutoConstantUnwrapping(a@Assign(lhs, rhs)) if lhs.isVariable => transformTerm(a)(owner)
+
       case Block(statements, term) =>  
         val last = transformTerm(term)(owner)
-        t.tpe match 
+        last.tpe match 
           case ProcessedParameter(typ) =>
             val (pStatements, exprs) = splitStatements(statements)(owner)     
             Block(
@@ -394,7 +408,10 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
             )
           case _ => t
 
-        
+      case Assign(lhs, rhs) if lhs.isVariable =>
+        val ProcessedParameter(typ) = lhs.tpe
+        val assignee = transformAssignee(rhs)(owner)
+        processor.assign(typ)(lhs, assignee)
 
       case If(BoolUnwrapping(cond), thenn, elze) =>
         assert(cond.isProcessedOf[Boolean])
