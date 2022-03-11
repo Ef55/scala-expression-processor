@@ -46,6 +46,7 @@ object math extends Processor[MathAST.MathExpr, MathAST.Variable] {
   override def initializer[T](va: Variable[T], init: MathExpr[T]) = va := init
   override def constant[T](t: T) = t match {
     case i: Int => Constant(i).asInstanceOf[MathExpr[T]]
+    case _ => throw java.lang.RuntimeException(s"Unsupported constant: ${t}")
   }
   override def sequence[T](ls: Seq[MathExpr[Any]], last: MathExpr[T]) = ls.foldRight(last)(Sequence(_, _))
   override def ifThenElse[T](cond: MathExpr[Boolean], thenn: MathExpr[T], elze: MathExpr[T]) = If(cond, thenn, elze)
@@ -67,6 +68,13 @@ object MathProcessorTests extends TestSuite {
 
   val tests = Tests {
     test("DSL") {
+      test("constant") {
+        mathAssert{
+          0
+        }{case 
+          Constant(0)
+        =>}
+      }
       test("equality") {
         mathAssert{
           val x: Variable[Int] = 0
@@ -85,10 +93,12 @@ object MathProcessorTests extends TestSuite {
           x := y + Constant(5)
         }{ case 
           Sequence(
-            Assign(VariableName("x"), Constant(-1)), Sequence(
-            Assign(VariableName("y"), Constant(0)),
-            Assign(VariableName("x"), Plus(VariableName("y"), Constant(5)))
-          ))
+            Assign(VariableName("x"), Constant(-1)), 
+            Sequence(
+              Assign(VariableName("y"), Constant(0)),
+              Assign(VariableName("x"), Plus(VariableName("y"), Constant(5)))
+            )
+          )
         =>}
       }
       test("bool-to-constant") {
@@ -99,6 +109,21 @@ object MathProcessorTests extends TestSuite {
           Sequence(
             Assign(VariableName("x"), Constant(0)),
             Assign(VariableName("x"), Constant(1))
+          )
+        =>}
+      }
+      test("re-assignation") {
+        mathAssert{
+          val x: Variable[Int] = 0
+          x := true
+          x := 2
+        }{ case
+          Sequence(
+            Assign(VariableName("x"), Constant(0)),
+            Sequence(
+              Assign(VariableName("x"), Constant(1)),
+              Assign(VariableName("x"), Constant(2))
+            )
           )
         =>}
       }
@@ -148,11 +173,10 @@ object MathProcessorTests extends TestSuite {
     }
     test("optional-features") {
       test("empty") {
-        val err = intercept[UnsupportedFeature](math{
+        val err = intercept[java.lang.RuntimeException](math{
           () // MathProcessor doesn't define empty
         })
-        assert(err.toString.contains("Missing feature"))
-        assert(err.toString.contains("empty"))
+        assert(err.toString.contains(().toString))
       }
     }
     test("proto-control-flow") {
@@ -213,24 +237,9 @@ object MathProcessorTests extends TestSuite {
             if x === Constant(0) then Constant(0) else Constant(1)
             val b: Boolean = x === Constant(0)
           }""")
-          assert(err.msg.contains("being converted"))
+          assert(err.msg.contains("Invalid conversion"))
+          assert(err.msg.contains("Boolean"))
           assert(err.msg.contains("if/while"))
-        }
-        test("initializer-as-conversion") {
-          val err = compileError("""math{
-            val x: Variable[Int] = 0
-            x := true   // Ok: an additional conversion was defined as part of the DSL
-            x := 1      // Error: default conversion used, which is reserved for variables initialization
-          }""")
-          assert(err.msg.contains("1"))
-          assert(err.msg.contains("not of type MathExpr"))
-        }
-        test("top-level-initializer") {
-          val err = compileError("""math{
-            1
-          }""")
-          assert(err.msg.contains("1"))
-          assert(err.msg.contains("not of type MathExpr"))
         }
       }
       test("invalid-proto-flow") {
@@ -249,15 +258,14 @@ object MathProcessorTests extends TestSuite {
       }
     }
     test("variable-shadowing") {
-      val r = math {
+      mathAssert{
         val x: Variable[Int] = 0
         x === Constant(0)
         {
           val x: Variable[Int] = 1
           x === Constant(1)
         }
-      }
-      assertMatch(r){
+      }{
         case Sequence(
           Assign(Variable(x1: Identifier), Constant(0)), 
           Sequence(
