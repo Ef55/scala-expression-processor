@@ -358,6 +358,14 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
       //val remStatements = pStatements.filter(s => !s.isInstanceOf[Term] || !s.asInstanceOf[Term].isProcessed)
       (pStatements, exprs)
 
+    def pushConstant(t: Term)(tpe: TypeRepr): Term = {
+      t match
+        case _ if t.isProcessed => t
+        case If(c@BoolUnwrapping(_), thenn, elze) => If.copy(t)(c, pushConstant(thenn)(tpe), pushConstant(elze)(tpe))
+        case Block(statements, term) => Block.copy(t)(statements, pushConstant(term)(tpe))
+        case _ => processor.constant(tpe)(t)
+    }
+
     override def transformTerm(t: Term)(owner: Symbol): Term = t match 
 
       case BoolUnwrapping(t) => 
@@ -372,49 +380,63 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
           t.pos
         )
       
-      case Block(statements, term) =>
-        val (pStatements, exprs) = splitStatements(statements)(owner)       
+      case Block(statements, term) =>  
         val last = transformTerm(term)(owner)
-        val ProcessedParameter(typ) = t.tpe
+        t.tpe match 
+          case ProcessedParameter(typ) =>
+            val (pStatements, exprs) = splitStatements(statements)(owner)     
+            Block(
+              pStatements,
+              processor.sequence(typ)(
+                Expr.ofList(exprs).asTerm, 
+                last
+              )
+            )
+          case _ => t
 
-        Block(
-          pStatements,
-          processor.sequence(typ)(
-            Expr.ofList(exprs).asTerm, 
-            last
-          )
-        )
+        
 
       case If(BoolUnwrapping(cond), thenn, elze) =>
         assert(cond.isProcessedOf[Boolean])
-        if !thenn.isProcessedOf[Any] || !elze.isProcessedOf[Any] then
-          report.errorAndAbort("Cannot use proto-if-then-else to return meta-values.", t.pos)
         val pCond = transformTerm(cond)(owner)
-        val pThen = transformTerm(thenn)(owner)
-        val pElse = transformTerm(elze)(owner)
-        val ProcessedParameter(typ) = t.tpe
+        val pThen = pushConstant(transformTerm(thenn)(owner))(t.tpe)
+        val pElse = pushConstant(transformTerm(elze)(owner))(t.tpe)
+        
+        val ProcessedParameter(typ) = pThen.tpe
         processor.ifThenElse(typ)(
           pCond, 
           pThen, 
           pElse
         )
 
-      case While(BoolUnwrapping(cond), Block(statements, Literal(UnitConstant()))) =>
-        /* Note: this case handles the full `<while> cond <block> statements () </block> </while>`
-         * at once to avoid an unnecessary call to `processor.empty`
-         */
-        
+      case While(BoolUnwrapping(cond), body) =>
         assert(cond.isProcessedOf[Boolean])
         val pCond = transformTerm(cond)(owner)
-        val (pStatements, exprs) = splitStatements(statements)(owner)
 
-        Block(
-          pStatements,
-          processor.whileLoop(
-            pCond,
-            processor.sequenceSeq(exprs)
-          )
-        )
+        body match 
+          case Block(statements, l@Literal(UnitConstant())) =>
+            // The trailing unit will be inferred by the compiler in most cases, which breaks everything 
+            // if we do not ignore it.
+            val (pStatements, exprs) = splitStatements(statements)(owner)
+            Block(
+              pStatements,
+              processor.whileLoop(
+                pCond,
+                processor.sequenceSeq(exprs)
+              )
+            )
+
+          case _ => 
+            val pBody = transformTerm(body)(owner)
+
+            if !pBody.isProcessed then
+              report.errorAndAbort("Cannot use proto-while to return meta-values.", t.pos)
+
+            processor.whileLoop(
+              pCond,
+              transformTerm(body)(owner)
+            )
+        
 
       case _ => super.transformTerm(t)(owner)
   }

@@ -57,7 +57,6 @@ object VariableName {
   def unapply[T](v: MathAST.Variable[T]): Option[String] = Identifier.unapply(v.id)
 }
 
-
 object MathProcessorTests extends TestSuite {
   import MathAST.*
   import math.{*,given}
@@ -196,11 +195,54 @@ object MathProcessorTests extends TestSuite {
           )
         =>}
       }
+      test("statement-if-then-else") {
+        mathAssert{
+          if Constant(0) === Constant(1) then
+            if Constant(0) === Constant(1) then
+              1
+            else
+              0
+          else
+            0
+          1
+        }{case
+          Sequence(
+            If(
+              Eq(Constant(0), Constant(1)),
+              If(
+                Eq(Constant(0), Constant(1)),
+                Constant(1),
+                Constant(0)
+              ),
+              Constant(0)
+            ),
+            Constant(1)
+          )
+        =>}
+      }
       test("while") {
         mathAssert{
           val x: Variable[Int] = 10
           while x === Constant(0) do
             x := x  - Constant(3)
+          x
+        }{ case
+          Sequence(
+            Assign(VariableName("x"), Constant(10)), Sequence(
+              While(
+                Eq(VariableName("x"), Constant(0)),
+                Assign(VariableName("x"), Minus(VariableName("x"), Constant(3)))
+              ),
+              VariableName("x")
+          ))
+        =>}
+      }
+      test("while-explicit-unit") {
+        mathAssert{
+          val x: Variable[Int] = 10
+          while x === Constant(0) do
+            x := x  - Constant(3)
+            ()
           x
         }{ case
           Sequence(
@@ -224,6 +266,16 @@ object MathProcessorTests extends TestSuite {
             Constant(0)
         }{case 
           Constant(1)
+        =>}
+      }
+      test("while") {
+        mathAssert{
+          var x = 0
+          while x < 10 do
+            x += 1
+          Constant(x)
+        }{case
+          Constant(10)
         =>}
       }
     }
@@ -251,65 +303,52 @@ object MathProcessorTests extends TestSuite {
           }
         }
       }
-      test("invalid-proto-flow") {
-        // Constructs of the form `if <proto/> then <meta/> else <meta/>`
-        test("if-then-else") {
-          mathError{
-            if Constant(0) === Constant(0) then
-              1
-            else
-              0
-            Constant(0)
-          }{msg =>
-            assert(msg.contains("proto-if-then-else"))
-            assert(msg.contains("meta-value"))
+    }
+    test("extra-features") {
+      test("variable-shadowing") {
+        mathAssert{
+          val x: Variable[Int] = 0
+          x === Constant(0)
+          {
+            val x: Variable[Int] = 1
+            x === Constant(1)
           }
+        }{
+          case Sequence(
+            Assign(Variable(x1: Identifier), Constant(0)), 
+            Sequence(
+              Eq(Variable(x2: Identifier), Constant(0)),
+              Sequence(
+                Assign(Variable(y1: Identifier), Constant(1)),
+                Eq(Variable(y2: Identifier), Constant(1))
+              )
+            )
+          ) => 
+            assert(x1.name == y1.name)
+            assert(x1 == x2, y1 == y2)
+            assert(x1 != y1, x1 != y2)
+            assert(x2 != y1, x2 != y2)
         }
       }
-    }
-    test("variable-shadowing") {
-      mathAssert{
-        val x: Variable[Int] = 0
-        x === Constant(0)
-        {
-          val x: Variable[Int] = 1
-          x === Constant(1)
-        }
-      }{
-        case Sequence(
-          Assign(Variable(x1: Identifier), Constant(0)), 
+      test("block-init") {
+        mathAssert{
+          val x: Variable[Int] = {
+            val y: Variable[Int] = 0
+            y
+          }
+          x
+        }{case 
           Sequence(
-            Eq(Variable(x2: Identifier), Constant(0)),
-            Sequence(
-              Assign(Variable(y1: Identifier), Constant(1)),
-              Eq(Variable(y2: Identifier), Constant(1))
-            )
+            Assign(VariableName("x"), 
+              Sequence(
+                Assign(VariableName("y"), Constant(0)),
+                VariableName("y")
+              )
+            ),
+            VariableName("x")
           )
-        ) => 
-          assert(x1.name == y1.name)
-          assert(x1 == x2, y1 == y2)
-          assert(x1 != y1, x1 != y2)
-          assert(x2 != y1, x2 != y2)
+        =>}
       }
-    }
-    test("block-init") {
-      mathAssert{
-        val x: Variable[Int] = {
-          val y: Variable[Int] = 0
-          y
-        }
-        x
-      }{case 
-        Sequence(
-          Assign(VariableName("x"), 
-            Sequence(
-              Assign(VariableName("y"), Constant(0)),
-              VariableName("y")
-            )
-          ),
-          VariableName("x")
-        )
-      =>}
     }
 
     test("WIP") {
