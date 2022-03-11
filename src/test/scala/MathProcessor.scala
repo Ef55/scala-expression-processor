@@ -282,6 +282,25 @@ object MathProcessorTests extends TestSuite {
           assert(x2 != y1, x2 != y2)
       }
     }
+    test("block-init") {
+      mathAssert{
+        val x: Variable[Int] = {
+          val y: Variable[Int] = 0
+          y
+        }
+        x
+      }{case 
+        Sequence(
+          Assign(VariableName("x"), 
+            Sequence(
+              Assign(VariableName("y"), Constant(0)),
+              VariableName("y")
+            )
+          ),
+          VariableName("x")
+        )
+      =>}
+    }
 
     test("WIP") {
       // test("for") {
