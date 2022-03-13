@@ -278,22 +278,22 @@ object MathProcessorTests extends TestSuite {
     test("errors") {
       test("features-abuse") {
         test("bool-unwrap") {
-          mathError{
+          mathError{"""math{
             val x: Variable[Int] = 0
             if x === Constant(0) then Constant(0) else Constant(1)
             val b: Boolean = x === Constant(0)
-          }{msg =>
+          }"""}{msg =>
             assert(msg.contains("Invalid conversion"))
             assert(msg.contains("Boolean"))
             assert(msg.contains("if/while"))
           }
         }
         test("variable-conversion") {
-          mathError{
+          mathError{"""math{
             def f(v: Variable[Int]): Variable[Int] = v
 
             f(0)
-          }{msg =>
+          }"""}{msg =>
             assert(msg.contains("Invalid conversion"))
             assert(msg.contains("Variable[scala.Int]"))
           }
