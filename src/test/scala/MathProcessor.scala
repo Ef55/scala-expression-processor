@@ -398,16 +398,22 @@ object MathProcessorTests extends TestSuite {
       //     x
       //   }
       // }
-      // test("bench") {
-      //   // Why on earth does this work ?!?
-      //   math{
-      //     def f(u: Unit): MathExpr[Int] = {println(u); Constant(0)}
+      test("bench") {
+        // Why on earth does this work ?!?
+        math{
+          def f(u: Unit): MathExpr[Int] = {println(u); Constant(0)}
 
-      //     var x: Variable[Int] = 0
-      //     x = 1
-      //     f({x = 2})
-      //   }
-      // }
+          var x: Variable[Int] = 0
+          x = 1
+          f({x = 2})
+        }
+        math{
+          def f(u: Unit): MathExpr[Int] = {println(u); Constant(0)}
+
+          var x: Variable[Int] = 0
+          f(while Constant(0) === Constant(1) do {x = 1})
+        }
+      }
     }
   }
 

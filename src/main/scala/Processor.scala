@@ -21,6 +21,9 @@ final case class ExpressionProcessorImplementationError protected (msg: String) 
   override def toString = msg
 }
 
+/** Contains "low-priority givens" used 
+  * to allow processed programs to typecheck prior to processing.
+  */ 
 trait TypeTricker[Processed[+_], Variable[+t] <: Processed[t]] {
   private final def conversionToBeErased(element: String): Nothing = 
     throw ExpressionProcessorImplementationError(s"The given ${element} should have been erased during processing;.")
@@ -34,8 +37,6 @@ trait TypeTricker[Processed[+_], Variable[+t] <: Processed[t]] {
     * if x then ... else ...
     * while x do ...
     * }}}
-    * 
-    * @group dsl
     */
   given boolUnwrapper: Conversion[Processed[Boolean], Boolean] = 
     conversionToBeErased("Conversion[Processed[Boolean], Boolean]")
@@ -45,10 +46,8 @@ trait TypeTricker[Processed[+_], Variable[+t] <: Processed[t]] {
     * 
     * Allows things such as:
     * {{{
-    * val x: Variable[Unit] = empty
+    * val x: Variable[Int] = 0
     * }}}
-    * 
-    * @group dsl
     */
   given variableConstantInitialization[T, S](using cv: Conversion[T, Processed[S]]): Conversion[T, Variable[S]] =
     conversionToBeErased("Conversion[T, Processed[T]]")
@@ -58,10 +57,9 @@ trait TypeTricker[Processed[+_], Variable[+t] <: Processed[t]] {
     * 
     * Allows things such as:
     * {{{
-    * val x: Variable[Int] = 0
+    * val x: Variable[Int] = constant(0)
+    * val y: Variable[Int] = y
     * }}}
-    * 
-    * @group dsl
     */
   given variableExpressionInitialization[T]: Conversion[Processed[T], Variable[T]] =
     conversionToBeErased("Conversion[Processed[T], Variable[T]]")
@@ -79,22 +77,14 @@ trait TypeTricker[Processed[+_], Variable[+t] <: Processed[t]] {
   * In the documentation of its methods, we will use |...|
   * to represent the application of this translation.
   * 
+  * The sequence construction [[exproc.Processor.sequence]] will also sometimes 
+  * be eluded for clarity.
+  * 
   * @tparam Processed Type of the resulting AST.
   * @tparam Variable Type of a variable in the AST.
-  * 
-  * @groupprio base 1
-  * @groupname base Usage
-  * @groupprio cstr 2
-  * @groupname cstr Constructor
-  * @groupprio opt 3
-  * @groupname opt Optional constructors
-  * @groupprio dsl 4
-  * @groupname dsl DSL
   */
 trait Processor[Processed[+_], Variable[+t] <: Processed[t]] extends TypeTricker[Processed, Variable] {
   /** Uses this processor to transform the provided scala code.
-    *
-    * @group base
     */ 
   final inline def apply[T](inline expr: Processed[T]): Processed[T] = process(this)(expr)    
 
@@ -104,13 +94,11 @@ trait Processor[Processed[+_], Variable[+t] <: Processed[t]] extends TypeTricker
     * {{{val x: Variable[T] = init}}} 
     * becomes
     * {{{
-    * val x: Variable[T] = Variable[T]("x")
-    * assign(x, |init|)
+    * val x: Variable[T] = variable[T]("x")
+    * initialize(x, |init|)
     * }}}
     * assuming
     * {{{init: Processed[T]}}}
-    * 
-    * @group cstr
     */
   def variable[T](id: Identifier): Variable[T]
 
@@ -120,16 +108,30 @@ trait Processor[Processed[+_], Variable[+t] <: Processed[t]] extends TypeTricker
     * {{{val x: Variable[T] = init}}} 
     * becomes
     * {{{
-    * val x: Variable[T] = Variable[T]("x")
-    * assign(x, |init|)
+    * val x: Variable[T] = variable[T]("x")
+    * initialize(x, |init|)
     * }}}
     * assuming
     * {{{init: Processed[T]}}}
-    * 
-    * @group cstr
     */
   def initialize[T](va: Variable[T], init: Processed[T]): Processed[Unit]
 
+  /** Constructs the assignation of a variable.
+    * 
+    * Used in variable re-assignation:
+    * {{{
+    * var x: Variable[T] = init
+    * x = newVal
+    * }}} 
+    * becomes
+    * {{{
+    * val x: Variable[T] = variable[T]("x")
+    * initialize(x, |init|)
+    * assign(x, |newVal|)
+    * }}}
+    * assuming
+    * {{{init: Processed[T]}}}
+    */
   def assign[T](va: Variable[T], init: Processed[T]): Processed[Unit]
 
   /** Constructs a constant.
@@ -138,13 +140,11 @@ trait Processor[Processed[+_], Variable[+t] <: Processed[t]] extends TypeTricker
     * {{{val x: Variable[T] = init}}} 
     * becomes
     * {{{
-    * val x: Variable[T] = Variable[T]("x")
-    * assign(x, constant(init))
+    * val x: Variable[T] = variable[T]("x")
+    * initialize(x, constant(init))
     * }}}
     * assuming
     * {{{init: T}}}
-    * 
-    * @group cstr
     */
   def constant[T](t: T): Processed[T]
 
@@ -152,16 +152,14 @@ trait Processor[Processed[+_], Variable[+t] <: Processed[t]] extends TypeTricker
     * 
     * Used in code blocks:
     * {{{
-    * \{
+    * {
     *   val x = ...
     *   while ...
     *   x
-    * \}
+    * }
     * }}}
     * becomes
     * {{{sequence(Seq(|val x = ...|, |while ...|), |x|)}}}
-    * 
-    * @group cstr
     */
   def sequence[T](fsts: Seq[Processed[Any]], last: Processed[T]): Processed[T]
 
@@ -170,34 +168,34 @@ trait Processor[Processed[+_], Variable[+t] <: Processed[t]] extends TypeTricker
     * Used in if-then-else blocks:
     * {{{
     * if x === Constant(0) then
-    *   Constant(1)
+    *   constant(1)
     * else
-    *   Constant(0)
+    *   constant(0)
     * }}}
     * becomes
-    * {{{ifThenElse(|x === Constant(0)|, |Constant(1)|, |Constant(0)|)}}}
-    * 
-    * @group cstr
+    * {{{ifThenElse(|x === constant(0)|, |constant(1)|, |constant(0)|)}}}
     */
   def ifThenElse[T](cond: Processed[Boolean], thenn: Processed[T], elze: Processed[T]): Processed[T]
 
   /** Constructs a while-loop.
     * 
     * Used in while-loops:
-    *
-    * 
-    * @note The body of the while-loop does not need to end with an expression;
-    * in particular, code such as 
     * {{{
-    * while ... do
-    *   val x: Variable[Int] = 0
+    * var x: Variable[Int] = init
+    * while cond do
+    *   x = newVal
     * }}}
-    * in perfectly valid, even if [[exproc.Processor.empty]] is not overriden.
-    *  
-    * @group cstr
+    * becomes
+    * {{{
+    * var x: Variable[Int] = variable[Int]("x")
+    * initialize(x, |init|)
+    * whileLoop(|cond|, assign(x, |newVal|))
+    * }}}
     */
   def whileLoop(cond: Processed[Boolean], body: Processed[Any]): Processed[Unit]
 
+  /** Calls [[exproc.Processor.constant]] when needed.
+    */ 
   given autoConstant[T]: Conversion[T, Processed[T]] with
     def apply(t: T) = constant(t)
 }
