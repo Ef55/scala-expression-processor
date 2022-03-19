@@ -231,20 +231,22 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
       member("constant").appliedToType(t).appliedTo(cst)
     def sequence(t: TypeRepr)(fsts: Term, last: Term): Term = 
       member("sequence").appliedToType(t).appliedToArgs(List(fsts, last))
+    def sequence(t: TypeRepr)(fsts: List[Term], last: Term): Term = 
+      sequence(t)(Expr.ofList(fsts.map(_.asProcessed)).asTerm, last)
     def ifThenElse(t: TypeRepr)(cond: Term, thenn: Term, elze: Term): Term = 
       member("ifThenElse").appliedToType(t).appliedToArgs(List(cond, thenn, elze))
     def whileLoop(cond: Term, body: Term): Term = 
       member("whileLoop").appliedToArgs(List(cond, body))
 
-    def sequenceSeq(ls: List[Expr[Processed[Any]]]): Term = 
+    def sequenceSeq(ls: List[Term]): Term = 
       require(!ls.isEmpty)
       val (firsts, last) = (ls: @unchecked) match 
-        case solo :: Nil => (List.empty[Expr[Processed[Any]]], solo)
+        case solo :: Nil => (List.empty, solo)
         case firsts :+ last => (firsts, last)
 
       processor.sequence(TypeRepr.of[Any])(
-        Expr.ofList(firsts).asTerm,
-        last.asTerm
+        firsts,
+        last
       )
   }  
 
@@ -253,7 +255,13 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
 
     def isProcessedOf[S](using Type[S]): Boolean = isExprOf[Processed[S]]
 
+    def asProcessedOf[S](using Type[S]): Expr[Processed[S]] = 
+      require(isProcessedOf[S])
+      t.asExprOf[Processed[S]]
+
     def isProcessed: Boolean = isProcessedOf[Any]
+
+    def asProcessed: Expr[Processed[Any]] = asProcessedOf[Any]
 
     def isVariable: Boolean = isExprOf[Variable[Any]]
   }
@@ -322,7 +330,7 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
         transformToStatements(s)(owner) match 
           case s :: Nil => s
           case s :: expr :: Nil => expr match 
-            case expr: Term => Block(List(s), expr)
+            case expr: Term => Block.copy(t)(List(s), expr)
             case _ => throw ExpressionProcessorImplementationError(s"transformToStatements second statement should be an expression.")
           case _ => throw ExpressionProcessorImplementationError(s"transformToStatements should not return more than two statements.")
       case _ => super.transformTree(t)(owner)
@@ -341,14 +349,13 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
     def transformToStatements(s: Statement)(owner: Symbol): List[Statement] = s match 
       case ValDef(name, tt@ProcessedParameterTT(typ), Some(initializer)) =>
         def flagWarning(flag: Flags, name: String): Unit = 
-          if s.symbol.flags.is(Flags.Lazy) then 
+          if s.symbol.flags.is(flag) then 
             report.warning(s"${name.capitalize} is ignored for proto-variable definitions.", s.pos)
 
-        val init = transformAssignee(initializer)(owner)
+        val init = transformAssignee(initializer)(s.symbol)
 
         flagWarning(Flags.Lazy, "lazy")
         flagWarning(Flags.Inline, "inline")
-        flagWarning(Flags.Mutable, "mutable")
 
         val vd = 
           ValDef.copy(s)(
@@ -358,7 +365,7 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
           )
         List(
           vd,                           // Meta-variable definition
-          processor.initialize(typ)(   // Proto-variable definition
+          processor.initialize(typ)(    // Proto-variable definition
             Ref(vd.symbol),
             init
           )
@@ -368,11 +375,15 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
     override def transformStats(ls: List[Statement])(owner: Symbol): List[Statement] =
       ls.flatMap(transformToStatements(_)(owner))
 
-    def splitStatements(statements: List[Statement])(owner: Symbol): (List[Statement], List[Expr[Processed[Any]]]) =
+    def splitStatements(statements: List[Statement])(owner: Symbol): (List[Statement], List[Term]) =
       val pStatements = transformStats(statements)(owner)
-      pStatements.foldRight[(List[Statement], List[Expr[Processed[Any]]])]((Nil, Nil)){ 
+      pStatements.foldRight[(List[Statement], List[Term])]((Nil, Nil)){ 
         case (statement, (statements, exprs)) => statement match
-          case t: Term if t.isProcessed => (statements, t.asExprOf[Processed[Any]] :: exprs)
+          case t: Term if t.isProcessed => 
+            val vs = Symbol.newVal(owner, s"processed", TypeRepr.of[Processed[Any]], Flags.EmptyFlags, Symbol.noSymbol)
+            val vd = ValDef(vs, Some(t))
+            val ref = Ref(vs)
+            (vd :: statements, ref :: exprs)
           case _ => (statement :: statements, exprs)
       }
 
@@ -404,10 +415,10 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
         last.tpe match 
           case ProcessedParameter(typ) =>
             val (pStatements, exprs) = splitStatements(statements)(owner)     
-            Block(
+            Block.copy(t)(
               pStatements,
               processor.sequence(typ)(
-                Expr.ofList(exprs).asTerm, 
+                exprs,
                 last
               )
             )
@@ -436,11 +447,11 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
         val pCond = transformTerm(cond)(owner)
 
         body match 
-          case Block(statements, l@Literal(UnitConstant())) =>
+          case b@Block(statements, l@Literal(UnitConstant())) =>
             // The trailing unit will be inferred by the compiler in most cases, which breaks everything 
             // if we do not ignore it.
             val (pStatements, exprs) = splitStatements(statements)(owner)
-            Block(
+            Block.copy(b)(
               pStatements,
               processor.whileLoop(
                 pCond,
@@ -464,6 +475,6 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
   }
 
   //println(s"Input:\n${expr.asTerm.show}")
-  val r = Transform.transformTerm(expr.asTerm)(Symbol.spliceOwner).asExprOf[Processed[T]]
-  //println(s"Processed:\n${r.asTerm.show}")
+  val r = Transform.transformTerm(expr.asTerm)(Symbol.spliceOwner).asProcessedOf[T]
+  //println(s"Processed:\n${Printer.TreeCode.show(r.asTerm)}")
   r

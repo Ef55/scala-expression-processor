@@ -56,8 +56,14 @@ object VariableName {
 object MathProcessorTests extends TestSuite {
   import MathAST.*
   import math.{*,given}
-  import processAssertions.{processMatchAssert => mathAssert, processCompileError => mathError}
+  import processAssertions.{
+    processMatchAssert => mathAssert, 
+    processCompileError => mathError,
+    processOutAssert => mathOut
+  }
 
+  inline def mathAutoOut(inline expr: (Any => Unit) => MathExpr[Any])(count: Int): Unit =
+    mathOut(expr)((0 until count).mkString("\n"))
 
   val tests = Tests {
     test("DSL") {
@@ -299,6 +305,18 @@ object MathProcessorTests extends TestSuite {
           }
         }
       }
+      // test("additional-type-checking") {
+      //   test("assign") {
+      //     mathError{"""math{
+      //       def f(u: Unit): MathExpr[Int] = Constant(0)
+
+      //       var x: Variable[Int] = 0
+      //       f({x = 1})
+      //     }"""}{msg =>
+      //       assert(msg == "")
+      //     }
+      //   }
+      // }
     }
     test("extra-features") {
       test("variable-shadowing") {
@@ -346,6 +364,23 @@ object MathProcessorTests extends TestSuite {
         =>}
       }
     }
+    test("side-effects") {
+      test("vals") {
+        mathAutoOut(log => {
+          val x: Variable[Int] = Constant{ log(0); 0}
+          var y: Variable[Int] = Constant{ log(1); 1}
+          val z: Variable[Int] = Constant{ log(2); 1}
+          x
+        })(3)
+      }
+      test("block") {
+        mathAutoOut(log => {
+          val x: Variable[Int] = Constant{ log(0); 0}
+          log(1)
+          x
+        })(2)
+      }
+    }
 
     test("WIP") {
       // test("for") {
@@ -361,6 +396,16 @@ object MathProcessorTests extends TestSuite {
       //     var x = Constant(0)
       //     x = Constant(1)
       //     x
+      //   }
+      // }
+      // test("bench") {
+      //   // Why on earth does this work ?!?
+      //   math{
+      //     def f(u: Unit): MathExpr[Int] = {println(u); Constant(0)}
+
+      //     var x: Variable[Int] = 0
+      //     x = 1
+      //     f({x = 2})
       //   }
       // }
     }
