@@ -11,6 +11,11 @@ lazy val root = project
     scalaVersion := scala3Version,
     // scalacOptions := Seq("-Xcheck-macros"), Cause errors with utest...
 
+    assembly / assemblyOption ~= {
+      _.withIncludeScala(false)
+        .withIncludeDependency(false)
+    },
+
     libraryDependencies += "com.lihaoyi" %% "utest" % "0.7.10" % "test",
 
     testFrameworks += new TestFramework("utest.runner.Framework"),

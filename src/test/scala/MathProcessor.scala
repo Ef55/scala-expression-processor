@@ -382,7 +382,7 @@ object MathProcessorTests extends TestSuite {
       }
     }
 
-    test("WIP") {
+    //test("WIP") {
       // test("for") {
       //   mathAssert{
       //     for i <- 0 until 3 do
@@ -391,30 +391,23 @@ object MathProcessorTests extends TestSuite {
       //     PartialFunction.empty
       //   }
       // }
-      // test("variable-assignation") {
+      // test("bench") {
+      //   // Why on earth does this work ?!?
       //   math{
-      //     var x = Constant(0)
-      //     x = Constant(1)
-      //     x
+      //     def f(u: Unit): MathExpr[Int] = {println(u); Constant(0)}
+
+      //     var x: Variable[Int] = 0
+      //     x = 1
+      //     f({x = 2})
+      //   }
+      //   math{
+      //     def f(u: Unit): MathExpr[Int] = {println(u); Constant(0)}
+
+      //     var x: Variable[Int] = 0
+      //     f(while Constant(0) === Constant(1) do {x = 1})
       //   }
       // }
-      test("bench") {
-        // Why on earth does this work ?!?
-        math{
-          def f(u: Unit): MathExpr[Int] = {println(u); Constant(0)}
-
-          var x: Variable[Int] = 0
-          x = 1
-          f({x = 2})
-        }
-        math{
-          def f(u: Unit): MathExpr[Int] = {println(u); Constant(0)}
-
-          var x: Variable[Int] = 0
-          f(while Constant(0) === Constant(1) do {x = 1})
-        }
-      }
-    }
+    //}
   }
 
 }

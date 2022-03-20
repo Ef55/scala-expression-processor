@@ -249,19 +249,21 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
   }  
 
   extension (t: Term) {
-    def isExprOf[S](using Type[S]): Boolean = t.tpe <:< TypeRepr.of[S]
+    def isExprOf(tpe: TypeRepr): Boolean = t.tpe <:< tpe
 
-    def isProcessedOf[S](using Type[S]): Boolean = isExprOf[Processed[S]]
+    def isProcessedOf(tpe: TypeRepr): Boolean = isExprOf(TypeRepr.of[Processed].appliedTo(tpe))
 
     def asProcessedOf[S](using Type[S]): Expr[Processed[S]] = 
-      require(isProcessedOf[S])
+      require(isProcessedOf(TypeRepr.of[S]))
       t.asExprOf[Processed[S]]
 
-    def isProcessed: Boolean = isProcessedOf[Any]
+    def isProcessedBoolean: Boolean = isProcessedOf(TypeRepr.of[Boolean])
+
+    def isProcessed: Boolean = isProcessedOf(TypeRepr.of[Any])
 
     def asProcessed: Expr[Processed[Any]] = asProcessedOf[Any]
 
-    def isVariable: Boolean = isExprOf[Variable[Any]]
+    def isVariable: Boolean = isExprOf(TypeRepr.of[Variable[Any]])
   }
 
 
@@ -379,19 +381,30 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
         case (statement, (statements, exprs)) => statement match
           case t: Term if t.isProcessed => 
             val vs = Symbol.newVal(owner, s"processed", TypeRepr.of[Processed[Any]], Flags.EmptyFlags, Symbol.noSymbol)
-            val vd = ValDef(vs, Some(t))
+            val vd = ValDef(vs, Some(t.changeOwner(vs)))
             val ref = Ref(vs)
             (vd :: statements, ref :: exprs)
           case _ => (statement :: statements, exprs)
       }
 
-    def pushConstant(t: Term)(tpe: TypeRepr): Term = {
-      t match
-        case _ if t.isProcessed => t
-        case If(c@BoolUnwrapping(_), thenn, elze) => If.copy(t)(c, pushConstant(thenn)(tpe), pushConstant(elze)(tpe))
-        case Block(statements, term) => Block.copy(t)(statements, pushConstant(term)(tpe))
-        case _ => processor.constant(tpe)(t)
-    }
+    def forceProcessed(t: Term)(typ: TypeRepr): Term = 
+      val tpe: TypeRepr = typ match {
+        case ProcessedParameter(t) => t
+        case t => t
+      }
+
+      if t.isProcessedOf(tpe) then
+        t
+      else if t.isProcessed then
+        throw ExpressionProcessorImplementationError(
+          "%s is processed, but has incorrect type %s; expected %s".format(
+            Printer.TreeCode.show(t),
+            processor.variableType(t.tpe),
+            processor.variableType(tpe)
+          )
+        )
+      else
+        processor.constant(tpe)(t)
 
     override def transformTerm(t: Term)(owner: Symbol): Term = t match 
       case BoolUnwrapping(t) => 
@@ -406,7 +419,8 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
           t.pos
         )
       
-      case AutoConstantUnwrapping(a@Assign(lhs, rhs)) if lhs.isVariable => transformTerm(a)(owner)
+      case AutoConstantUnwrapping(a@Assign(lhs, _)) if lhs.isVariable => transformTerm(a)(owner)
+      case AutoConstantUnwrapping(w@While(_, _)) => forceProcessed(transformTerm(w)(owner))(TypeRepr.of[Any])
 
       case Block(statements, term) =>  
         val last = transformTerm(term)(owner)
@@ -428,10 +442,10 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
         processor.assign(typ)(lhs, assignee)
 
       case If(BoolUnwrapping(cond), thenn, elze) =>
-        assert(cond.isProcessedOf[Boolean])
+        assert(cond.isProcessedBoolean)
         val pCond = transformTerm(cond)(owner)
-        val pThen = pushConstant(transformTerm(thenn)(owner))(t.tpe)
-        val pElse = pushConstant(transformTerm(elze)(owner))(t.tpe)
+        val pThen = forceProcessed(transformTerm(thenn)(owner))(t.tpe)
+        val pElse = forceProcessed(transformTerm(elze)(owner))(t.tpe)
         
         val ProcessedParameter(typ) = pThen.tpe
         processor.ifThenElse(typ)(
@@ -441,7 +455,7 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
         )
 
       case While(BoolUnwrapping(cond), body) =>
-        assert(cond.isProcessedOf[Boolean])
+        assert(cond.isProcessedBoolean)
         val pCond = transformTerm(cond)(owner)
 
         body match 
