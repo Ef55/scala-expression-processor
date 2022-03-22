@@ -3,8 +3,6 @@ import exproc.*
 import utest.*
 import scala.collection.mutable.ArrayBuffer
 
-//import java.io.{ByteArrayOutputStream, PrintStream, FileOutputStream, FileDescriptor}
-
 class Logger {
   val buffer = ArrayBuffer.empty[String]
 

@@ -305,18 +305,6 @@ object MathProcessorTests extends TestSuite {
           }
         }
       }
-      // test("additional-type-checking") {
-      //   test("assign") {
-      //     mathError{"""math{
-      //       def f(u: Unit): MathExpr[Int] = Constant(0)
-
-      //       var x: Variable[Int] = 0
-      //       f({x = 1})
-      //     }"""}{msg =>
-      //       assert(msg == "")
-      //     }
-      //   }
-      // }
     }
     test("extra-features") {
       test("variable-shadowing") {
@@ -385,29 +373,19 @@ object MathProcessorTests extends TestSuite {
     //test("WIP") {
       // test("for") {
       //   mathAssert{
-      //     for i <- 0 until 3 do
-      //       Constant(i)
-      //   }{
-      //     PartialFunction.empty
-      //   }
-      // }
-      // test("bench") {
-      //   // Why on earth does this work ?!?
-      //   math{
-      //     def f(u: Unit): MathExpr[Int] = {println(u); Constant(0)}
-
       //     var x: Variable[Int] = 0
-      //     x = 1
-      //     f({x = 2})
-      //   }
-      //   math{
-      //     def f(u: Unit): MathExpr[Int] = {println(u); Constant(0)}
-
-      //     var x: Variable[Int] = 0
-      //     f(while Constant(0) === Constant(1) do {x = 1})
-      //   }
+      //     for i <- 1 until 3 yield
+      //       x = Constant(i)
+      //   }{case 
+      //     Sequence(
+      //       Sequence(
+      //         Initialize(VariableName("x"), Constant(0)),
+      //         Assign(VariableName("x"), Constant(1))
+      //       ),
+      //       Assign(VariableName("x"), Constant(2))
+      //     )
+      //   =>}
       // }
     //}
   }
-
 }

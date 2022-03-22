@@ -2,15 +2,17 @@ package exproc
 
 import scala.quoted.*
 
-/** Thrown when the processing requires an optional feature which is 
-  * not supported by the processor at hand.
-  * 
-  * @param feature Name of the unsupported feature.
-  * 
-  * @see [[exproc.Processor]] for a list of optional features.
-  */
-sealed case class UnsupportedFeature(feature: String) extends Exception {
-  override def toString = s"Missing feature --- ${feature}"
+trait ProcessorConfig {
+  val printCode: Boolean
+}
+
+object ProcessorConfig {
+  given default: ProcessorConfig with
+    val printCode = false
+  
+  object WithPrint extends ProcessorConfig {
+    override val printCode = true
+  }
 }
 
 /** Thrown when the processing reaches and invalid state.
@@ -86,7 +88,7 @@ trait TypeTricker[Processed[+_], Variable[+t] <: Processed[t]] {
 trait Processor[Processed[+_], Variable[+t] <: Processed[t]] extends TypeTricker[Processed, Variable] {
   /** Uses this processor to transform the provided scala code.
     */ 
-  final inline def apply[T](inline expr: Processed[T]): Processed[T] = process(this)(expr)    
+  final inline def apply[T](inline expr: Processed[T])(using config: ProcessorConfig): Processed[T] = process(this)(expr)(config)
 
   /** Constructs a variable.
     * 
@@ -200,11 +202,15 @@ trait Processor[Processed[+_], Variable[+t] <: Processed[t]] extends TypeTricker
     def apply(t: T) = constant(t)
 }
 
-private inline def process[Processed[+_], Variable[+t] <: Processed[t], T](processor: Processor[Processed, Variable])(inline expr: Processed[T]): Processed[T] =
-  ${processImpl('{processor}, '{expr})}
+private inline def process[Processed[+_], Variable[+t] <: Processed[t], T]
+(processor: Processor[Processed, Variable])
+(inline expr: Processed[T])
+(config: ProcessorConfig): Processed[T] =
+  ${processImpl('{processor}, '{expr})('{config})}
 
 private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
 (processorExpr: Expr[Processor[Processed, Variable]], expr: Expr[Processed[T]])
+(config: Expr[ProcessorConfig])
 (using Type[Processed], Type[Variable], Type[T], Quotes): Expr[Processed[T]] = 
   import quotes.reflect.*
 
@@ -367,7 +373,7 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
           vd,                           // Meta-variable definition
           processor.initialize(typ)(    // Proto-variable definition
             Ref(vd.symbol),
-            init
+            init.changeOwner(owner)
           )
         )
       case _ => List(super.transformStatement(s)(owner))
@@ -486,7 +492,14 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
       case _ => super.transformTerm(t)(owner)
   }
 
-  //println(s"Input:\n${expr.asTerm.show}")
+
+  val before = s"Input:\n${expr.asTerm.show}"
   val r = Transform.transformTerm(expr.asTerm)(Symbol.spliceOwner).asProcessedOf[T]
-  //println(s"Processed:\n${Printer.TreeCode.show(r.asTerm)}")
-  r
+  val after = s"Processed:\n${Printer.TreeCode.show(r.asTerm)}"
+  '{
+    if ${config}.printCode then
+        println(${Expr(before)})
+    if ${config}.printCode then
+      println(${Expr(after)})
+    ${r}
+  }

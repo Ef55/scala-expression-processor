@@ -6,10 +6,10 @@ lazy val root = project
   .in(file("."))
   .settings(
     name := "expressions-processor",
-    version := "0.1.0-SNAPSHOT",
+    version := "0.1.1",
 
     scalaVersion := scala3Version,
-    // scalacOptions := Seq("-Xcheck-macros"), Cause errors with utest...
+    //scalacOptions := Seq("-Xcheck-macros"), //Cause errors with utest...
 
     assembly / assemblyOption ~= {
       _.withIncludeScala(false)
