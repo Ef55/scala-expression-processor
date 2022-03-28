@@ -2,7 +2,7 @@ import exproc.*
 import exproc.{Identifier => Id}
 import utest.*
 
-object MathAST {
+object AST {
   sealed trait MathExpr[+T]
   case class Variable[+T](id: Identifier) extends MathExpr[T]
   case class Constant(i: Int) extends MathExpr[Int]
@@ -16,9 +16,9 @@ object MathAST {
   case class Eq[+T](lhs: MathExpr[T], rhs: MathExpr[T]) extends MathExpr[Boolean]
 }
 
-object math extends Processor[MathAST.MathExpr, MathAST.Variable] {
-  import MathAST.*
-  given Processor[MathAST.MathExpr, MathAST.Variable] = this
+object math extends AstBuilder[AST.MathExpr, AST.Variable] {
+  import AST.*
+  given AstBuilder[AST.MathExpr, AST.Variable] = this
 
   /* DSL */
 
@@ -34,7 +34,7 @@ object math extends Processor[MathAST.MathExpr, MathAST.Variable] {
   given Conversion[Boolean, MathExpr[Int]] with
     def apply(b: Boolean) = if b then Constant(1) else Constant(0)
 
-  /* Processor */
+  /* AstBuilder */
 
   override def variable[T](id: Identifier): Variable[T] = Variable[T](id)
   override def initialize[T](va: Variable[T], init: MathExpr[T]) = Initialize(va, init)
@@ -50,19 +50,19 @@ object math extends Processor[MathAST.MathExpr, MathAST.Variable] {
 }
 
 object VariableName {
-  def unapply[T](v: MathAST.Variable[T]): Option[String] = Identifier.unapply(v.id)
+  def unapply[T](v: AST.Variable[T]): Option[String] = Identifier.unapply(v.id)
 }
 
-object MathProcessorTests extends TestSuite {
-  import MathAST.*
+object MathAst extends TestSuite {
+  import AST.*
   import math.{*,given}
-  import processAssertions.{
-    processMatchAssert => mathAssert, 
-    processCompileError => mathError,
-    processOutAssert => mathOut
+  import builderAssertions.{
+    buildMatchAssert => mathAssert,
+    buildOutAssert => mathOut, 
+    buildCompileError => mathError
   }
 
-  inline def mathAutoOut(inline expr: (Any => Unit) => MathExpr[Any])(count: Int): Unit =
+  inline def mathAutoOut[T](inline expr: (Any => Unit) => MathExpr[T])(count: Int): Unit =
     mathOut(expr)((0 until count).mkString("\n"))
 
   val tests = Tests {

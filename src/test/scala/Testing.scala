@@ -10,22 +10,22 @@ class Logger {
   def get: String = buffer.mkString("\n")
 }
 
-object processAssertions {
-  inline def processMatchAssert[Processed[+_], Variable[+t] <: Processed[t]]
-    (using processor: Processor[Processed, Variable])
-    (inline expr: Processed[Any])(inline expected: PartialFunction[Any, Unit]): Unit =
-      val result = processor(expr)
+object builderAssertions {
+  inline def buildMatchAssert[Result[_], T]
+    (using builder: Builder[Result])
+    (inline expr: Result[T])(inline expected: PartialFunction[Any, Unit]): Unit =
+      val result = builder(expr)
       assertMatch( result )( expected )
 
-  inline def processOutAssert[Processed[+_], Variable[+t] <: Processed[t]]
-    (using processor: Processor[Processed, Variable])
-    (inline expr: (Any => Unit) => Processed[Any])(expected: String): Unit =
+  inline def buildOutAssert[Result[_], T]
+    (using builder: Builder[Result])
+    (inline expr: (Any => Unit) => Result[T])(expected: String): Unit =
       given logger: Logger = Logger()
-      processor(expr(logger.log))
+      builder(expr(logger.log))
       val result = logger.get
       assert(expected == result)
 
-  inline def processCompileError[Processed[+_], Variable[+t] <: Processed[t]]
+  inline def buildCompileError[Result[_]]
     (inline expr: String)(cont: String => Unit): Unit =
       val errs = testing.typeCheckErrors(expr)
       assert(!errs.isEmpty)

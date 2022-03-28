@@ -19,4 +19,5 @@ lazy val root = project
     libraryDependencies += "com.lihaoyi" %% "utest" % "0.7.10" % "test",
 
     testFrameworks += new TestFramework("utest.runner.Framework"),
+    Test / parallelExecution := false
   )

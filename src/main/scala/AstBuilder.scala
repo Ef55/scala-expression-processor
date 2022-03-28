@@ -2,19 +2,6 @@ package exproc
 
 import scala.quoted.*
 
-trait ProcessorConfig {
-  val printCode: Boolean
-}
-
-object ProcessorConfig {
-  given default: ProcessorConfig with
-    val printCode = false
-  
-  object WithPrint extends ProcessorConfig {
-    override val printCode = true
-  }
-}
-
 /** Thrown when the processing reaches and invalid state.
   * 
   * Indicates an implementation error in the library.
@@ -79,16 +66,16 @@ trait TypeTricker[Processed[+_], Variable[+t] <: Processed[t]] {
   * In the documentation of its methods, we will use |...|
   * to represent the application of this translation.
   * 
-  * The sequence construction [[exproc.Processor.sequence]] will also sometimes 
+  * The sequence construction [[exproc.AstBuilder.sequence]] will also sometimes 
   * be eluded for clarity.
   * 
   * @tparam Processed Type of the resulting AST.
   * @tparam Variable Type of a variable in the AST.
   */
-trait Processor[Processed[+_], Variable[+t] <: Processed[t]] extends TypeTricker[Processed, Variable] {
-  /** Uses this processor to transform the provided scala code.
+trait AstBuilder[Processed[+_], Variable[+t] <: Processed[t]] extends Builder[Processed] with TypeTricker[Processed, Variable] {
+  /** Uses this AST builder to transform the provided scala code.
     */ 
-  final inline def apply[T](inline expr: Processed[T])(using config: ProcessorConfig): Processed[T] = process(this)(expr)(config)
+  final override inline def apply[T](inline expr: Processed[T])(using config: BuilderConfig): Processed[T] = processAst(this)(expr)(config)
 
   /** Constructs a variable.
     * 
@@ -196,21 +183,21 @@ trait Processor[Processed[+_], Variable[+t] <: Processed[t]] extends TypeTricker
     */
   def whileLoop(cond: Processed[Boolean], body: Processed[Any]): Processed[Unit]
 
-  /** Calls [[exproc.Processor.constant]] when needed.
+  /** Calls [[exproc.AstBuilder.constant]] when needed.
     */ 
   given autoConstant[T]: Conversion[T, Processed[T]] with
     def apply(t: T) = constant(t)
 }
 
-private inline def process[Processed[+_], Variable[+t] <: Processed[t], T]
-(processor: Processor[Processed, Variable])
+private inline def processAst[Processed[+_], Variable[+t] <: Processed[t], T]
+(processor: AstBuilder[Processed, Variable])
 (inline expr: Processed[T])
-(config: ProcessorConfig): Processed[T] =
-  ${processImpl('{processor}, '{expr})('{config})}
+(config: BuilderConfig): Processed[T] =
+  ${processAstImpl('{processor}, '{expr})('{config})}
 
-private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
-(processorExpr: Expr[Processor[Processed, Variable]], expr: Expr[Processed[T]])
-(config: Expr[ProcessorConfig])
+private def processAstImpl[Processed[+_], Variable[+t] <: Processed[t], T]
+(processorExpr: Expr[AstBuilder[Processed, Variable]], expr: Expr[Processed[T]])
+(config: Expr[BuilderConfig])
 (using Type[Processed], Type[Variable], Type[T], Quotes): Expr[Processed[T]] = 
   import quotes.reflect.*
 
@@ -220,7 +207,7 @@ private def processImpl[Processed[+_], Variable[+t] <: Processed[t], T]
       assert(methds.length == 1)
       term.select(methds.head)
 
-    val symbol = TypeRepr.of[Processor].typeSymbol
+    val symbol = TypeRepr.of[AstBuilder].typeSymbol
     val term = processorExpr.asTerm
 
     def variableType(t: TypeRepr): String = s"${TypeRepr.of[Variable].typeSymbol.name}[${t.typeSymbol.fullName}]"
