@@ -259,25 +259,10 @@ private def processAstImpl[Processed[+_], Variable[+t] <: Processed[t], T]
     def isVariable: Boolean = isExprOf(TypeRepr.of[Variable[Any]])
   }
 
-
-  object ImplicitConversion {
-    def unapply(t: Term): Option[(Term, Term, TypeRepr, TypeRepr)] = t match 
-      case a@Apply(Select(conversion, "apply"), arg :: Nil) => 
-        val convKind = TypeRepr.of[Conversion]
-        val conv = convKind.appliedTo(List(arg.tpe, a.tpe))
-        if conversion.tpe <:< conv && conversion.symbol.flags.is(Flags.Given) then
-          Some((conversion, arg, arg.tpe, a.tpe))
-        else 
-         None
-      case _ => None
-  }
-
   object BoolUnwrapping {
-    def unapply(t: Term): Option[Term] = t match {
-      case ImplicitConversion(_, converted, from, to) 
-        if from <:< TypeRepr.of[Processed[Boolean]] && to =:= TypeRepr.of[Boolean] => Some(converted)
-      case _ => None 
-    }
+    private val base = new ImplicitUnwrapper[Processed]{}
+    def unapply(t: Term): Option[Term] =
+      base.unapply(t).filter(_ => t.tpe =:= TypeRepr.of[Boolean])
   }
 
   object InitializerUnwrapping {
@@ -292,29 +277,14 @@ private def processAstImpl[Processed[+_], Variable[+t] <: Processed[t], T]
     }
   }
 
-  object AutoConstantUnwrapping {
-    def unapply(t: Term): Option[Term] =
-      t match 
-        case ImplicitConversion(_, converted, from, to)
-          if to <:< TypeRepr.of[Processed].appliedTo(from) => Some(converted)
-        case _ => None
-  }
+  object AutoConstantUnwrapping extends ImplicitWrapper[Processed]
 
   object ProcessedParameterTT {
     def unapply(tt: TypeTree): Option[TypeRepr] = 
       ProcessedParameter.unapply(tt.tpe)
   }
 
-  object ProcessedParameter {
-    def unapply(tt: TypeRepr): Option[TypeRepr] = 
-      val bt = tt.baseType(TypeRepr.of[Processed].typeSymbol)
-      bt match {
-        case AppliedType(cstr, arg :: Nil) => 
-          assert(cstr =:= TypeRepr.of[Processed])
-          Some(arg)
-        case _ => None
-      }
-  }
+  object ProcessedParameter extends Unwrap[Processed]
 
   object Transform extends TreeMap {
 

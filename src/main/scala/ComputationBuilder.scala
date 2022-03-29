@@ -57,34 +57,14 @@ private def buildComputationImpl[Computation[_], T]
       member("run").appliedToType(t).appliedTo(c)
   }  
 
-  object ImplicitConversion {
-    def unapply(t: Term): Option[(Term, Term, TypeRepr, TypeRepr)] = t match 
-      case a@Apply(Select(conversion, "apply"), arg :: Nil) => 
-        val convKind = TypeRepr.of[Conversion]
-        val conv = convKind.appliedTo(List(arg.tpe, a.tpe))
-        if conversion.tpe <:< conv && conversion.symbol.flags.is(Flags.Given) then
-          Some((conversion, arg, arg.tpe, a.tpe))
-        else 
-         None
-      case _ => None
-  }
+  object Binder extends ImplicitUnwrapper[Computation]
 
-  object Binder {
-    def unapply(t: Term): Option[Term] =
-      t match 
-        case ImplicitConversion(_, converted, from, to)
-          if from <:< TypeRepr.of[Computation].appliedTo(to) => Some(converted)
-        case _ => None
-  }
+  object Run extends Unwrap[Computation]
 
-  object Run {
-    def unapply(tpe: TypeRepr): Option[TypeRepr] = 
-      val bt = tpe.baseType(TypeRepr.of[Computation].typeSymbol)
-      bt match
-        case AppliedType(cstr, arg :: Nil) => 
-          assert(cstr =:= TypeRepr.of[Computation])
-          Some(arg)
-        case _ => None
+  object RunIf {
+    def unapply(tpe: TypeRepr): Option[(TypeRepr, Boolean)] = 
+      Run.unapply(tpe).map(t => (t, true))
+        .orElse(Some((tpe, false)))
   }
 
   object BangApplication {
@@ -94,18 +74,6 @@ private def buildComputationImpl[Computation[_], T]
         val typ = t.tpe
         Some(c)
       case _ => None
-  }
-
-  object RunIf {
-    def unapply(tpe: TypeRepr): Option[(TypeRepr, Boolean)] = 
-      Run.unapply(tpe).map(t => (t, true))
-        .orElse(Some((tpe, false)))
-  }
-
-  final class SubstituteRef(rem: Symbol, add: Term) extends TreeMap {
-    override def transformTerm(t: Term)(owner: Symbol): Term = t match 
-      case _ if t.symbol == rem => add.changeOwner(owner)
-      case _ => super.transformTerm(t)(owner)
   }
 
   object Transform extends TreeMap {
@@ -180,10 +148,10 @@ private def buildComputationImpl[Computation[_], T]
         )
 
       case Block(statements, term) =>  
-        val (sts, t) = transformToStats(statements, term)(owner)  
-        Block(
+        val (sts, last) = transformToStats(statements, term)(owner)  
+        Block.copy(t)(
           sts,
-          t
+          last
         )
 
 
