@@ -1,6 +1,9 @@
+package asts
+
 import exproc.*
 import exproc.{Identifier => Id}
 import utest.*
+import testing.*
 
 object AST {
   sealed trait MathExpr[+T]

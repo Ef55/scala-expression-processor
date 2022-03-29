@@ -5,15 +5,17 @@ import scala.quoted.*
 
 trait ComputationBuilder[Computation[_]] extends Builder[Computation] {
   private final def conversionToBeErased(element: String): Nothing = 
-    throw ExpressionProcessorImplementationError(s"The given ${element} should have been erased during processing;.")
+    throw ExpressionProcessorImplementationError(s"The given ${element} should have been erased during processing.")
 
 
   def bind[T, S](m: Computation[T], f: T => Computation[S]): Computation[S]
 
-  def ret[T](t: T): Computation[T]
+  def ret[T](t: => T): Computation[T]
+
+  def run[T](c: () => Computation[T]): Computation[T] = c()
 
   given binder[T]: Conversion[Computation[T], T] =
-    conversionToBeErased("Conversion[Processed[T], T]")
+    conversionToBeErased("Conversion[Computation[T], T]")
 
   final inline def apply[T](inline c: Computation[T])(using config: BuilderConfig): Computation[T] = buildComputation(this)(c)
 }
@@ -42,6 +44,9 @@ private def buildComputationImpl[Computation[_], T]
 
     def bind(t: TypeRepr, s: TypeRepr)(m: Term, f: Term): Term =
       member("bind").appliedToTypes(List(t, s)).appliedToArgs(List(m, f))
+
+    def run(t: TypeRepr)(c: Term): Term =
+      member("run").appliedToType(t).appliedTo(c)
   }  
 
   object ImplicitConversion {
@@ -128,9 +133,9 @@ private def buildComputationImpl[Computation[_], T]
               _ => List(tType),
               _ => builder.computation(sType)
             ), 
-            (_, args) => {
+            (sym, args) => {
               val arg :: Nil = args
-              SubstituteRef(s.symbol, arg.asInstanceOf[Term]).transformTerm(Block(right, last))(owner)
+              SubstituteRef(s.symbol, arg.asInstanceOf[Term]).transformTerm(Block(right, last))(sym)
             }
           )
 
@@ -161,6 +166,18 @@ private def buildComputationImpl[Computation[_], T]
       case _ => super.transformTerm(t)(owner)
   }
 
-  val r = Transform.transformTerm(computation.asTerm)(Symbol.spliceOwner).asExprOf[Computation[T]]
-  //println(s"Built: ${Printer.TreeCode.show(r.asTerm)}")
-  r
+  val owner = Symbol.spliceOwner
+  val transformed = Transform.transformTerm(computation.asTerm)(owner)
+  val Run(retType) = transformed.tpe
+  val lmbd = Lambda(
+      owner, 
+      MethodType(List())(
+        _ => List(),
+        _ => builder.computation(retType)
+      ), 
+      (sym, _) => transformed.changeOwner(sym)
+    )
+  val r = builder.run(retType)(lmbd)
+  // println(s"Got: ${Printer.TreeCode.show(computation.asTerm)}")
+  // println(s"Built: ${Printer.TreeCode.show(r)}")
+  r.asExprOf[Computation[T]]

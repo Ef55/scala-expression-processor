@@ -1,3 +1,5 @@
+package testing
+
 import scala.compiletime.*
 import exproc.*
 import utest.*
@@ -8,6 +10,7 @@ class Logger {
 
   def log(s: Any): Unit = buffer.addOne(s.toString)
   def get: String = buffer.mkString("\n")
+  def clear: Unit = buffer.clear
 }
 
 object builderAssertions {
