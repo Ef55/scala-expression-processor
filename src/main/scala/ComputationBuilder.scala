@@ -8,11 +8,11 @@ trait ComputationBuilder[Computation[_]] extends Builder[Computation] {
     throw ExpressionProcessorImplementationError(s"The given ${element} should have been erased during processing.")
 
 
-  def bind[T, S](m: Computation[T], f: T => Computation[S]): Computation[S]
+  inline def bind[T, S](inline m: Computation[T], inline f: T => Computation[S]): Computation[S]
 
-  def ret[T](t: => T): Computation[T]
+  inline def ret[T](inline t: => T): Computation[T]
 
-  def run[T](c: () => Computation[T]): Computation[T] = c()
+  inline def run[T](inline c: () => Computation[T]): Computation[T]
 
   given binder[T]: Conversion[Computation[T], T] =
     conversionToBeErased("Conversion[Computation[T], T]")
@@ -24,9 +24,13 @@ trait ComputationBuilder[Computation[_]] extends Builder[Computation] {
   final inline def apply[T](inline c: Computation[T])(using config: BuilderConfig): Computation[T] = buildComputation(this)(c)
 }
 
+trait DefaultRun[Computation[_]] { self: ComputationBuilder[Computation] =>
+  inline def run[T](inline c: () => Computation[T]): Computation[T] = c()
+}
+
 
 private inline def buildComputation[Computation[_], T]
-(builder: ComputationBuilder[Computation])
+(inline builder: ComputationBuilder[Computation])
 (inline computation: Computation[T]): Computation[T] =
   ${buildComputationImpl('{builder}, '{computation})}
 
@@ -64,7 +68,6 @@ private def buildComputationImpl[Computation[_], T]
          None
       case _ => None
   }
-
 
   object Binder {
     def unapply(t: Term): Option[Term] =
@@ -144,7 +147,7 @@ private def buildComputationImpl[Computation[_], T]
 
           val lmbd = Lambda(
             owner, 
-            MethodType(List("x"))(
+            MethodType(List(name))(
               _ => List(tType),
               _ => builder.computation(sType)
             ), 
@@ -178,7 +181,7 @@ private def buildComputationImpl[Computation[_], T]
 
       case Block(statements, term) =>  
         val (sts, t) = transformToStats(statements, term)(owner)  
-        Block.copy(t)(
+        Block(
           sts,
           t
         )

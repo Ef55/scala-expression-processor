@@ -4,16 +4,16 @@ import exproc.*
 import utest.*
 import testing.*
 
-object maybe extends ComputationBuilder[Option] {
-  given ComputationBuilder[Option] = this
+object maybe extends ComputationBuilder[Option] with DefaultRun[Option] {
+  transparent inline given ComputationBuilder[Option] = this
 
-  override def bind[T, S](opt: Option[T], f: T => Option[S]) = opt.flatMap(f)
-  override def ret[T](t: => T) = Some(t)
+  override inline def bind[T, S](inline opt: Option[T], inline f: T => Option[S]) = opt.flatMap(f)
+  override inline def ret[T](inline t: => T) = Some(t)
 }
 
 object OptionFlow extends TestSuite {
   import maybe.{*,given}
-  import builderAssertions.{
+  import BuilderAssertions.{
     buildMatchAssert => maybeAssert,
     buildCompileError => maybeError
   }

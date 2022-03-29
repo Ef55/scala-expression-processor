@@ -15,9 +15,9 @@ class Lazy[T](t: => T) {
 object delayed extends ComputationBuilder[Lazy] {
   given ComputationBuilder[Lazy] = this
 
-  override def bind[T, S](d: Lazy[T], f: T => Lazy[S]) = d.flatMap(f)
-  override def ret[T](t: => T) = Lazy(t)
-  override def run[T](c: () => Lazy[T]) = Lazy(()).flatMap(_ => c())
+  override inline def bind[T, S](inline d: Lazy[T], inline f: T => Lazy[S]) = d.flatMap(f)
+  override inline def ret[T](inline t: => T) = Lazy(t)
+  override inline def run[T](inline c: () => Lazy[T]) = Lazy(()).flatMap(_ => c())
 }
 
 inline def delayedAssert[T](inline expr: (Any => Unit) => Lazy[T])(computeTest: String => Unit): Unit =

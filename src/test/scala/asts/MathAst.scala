@@ -21,7 +21,7 @@ object AST {
 
 object math extends AstBuilder[AST.MathExpr, AST.Variable] {
   import AST.*
-  given AstBuilder[AST.MathExpr, AST.Variable] = this
+  inline given AstBuilder[AST.MathExpr, AST.Variable] = this
 
   /* DSL */
 
@@ -59,7 +59,8 @@ object VariableName {
 object MathAst extends TestSuite {
   import AST.*
   import math.{*,given}
-  import builderAssertions.{
+
+  import BuilderAssertions.{
     buildMatchAssert => mathAssert,
     buildOutAssert => mathOut, 
     buildCompileError => mathError
