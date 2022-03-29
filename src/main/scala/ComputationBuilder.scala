@@ -161,12 +161,18 @@ private def buildComputationImpl[Computation[_], T]
     }.ensuring(res => last.tpe =:= res._2.tpe)
 
     def transformToStats(ls: List[Statement], last: Term)(owner: Symbol): (List[Statement], Term) =
-      ls.foldRight((List.empty[Statement], last)){ case (l, (right, last)) => transformToStatements(l)(owner)(right, last) }
+      ls.foldRight((List.empty[Statement], transformTerm(last)(owner))){ case (l, (right, last)) => transformToStatements(l)(owner)(right, last) }
 
     override def transformTerm(t: Term)(owner: Symbol): Term = t match 
-      case b@Binder(monad) =>
+      case b@Binder(_) =>
         report.errorAndAbort(
           s"Invalid conversion to ${Printer.TypeReprCode.show(b.tpe)}",
+          t.pos
+        )
+
+      case b@BangApplication(_) =>
+        report.errorAndAbort(
+          s"Invalid use of bang (!): it can only be used at the top-level of a value definition.",
           t.pos
         )
 

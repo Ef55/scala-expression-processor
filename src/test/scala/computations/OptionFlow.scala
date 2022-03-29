@@ -48,6 +48,24 @@ object OptionFlow extends TestSuite {
             Some(3)
           =>}
         }
+        test("none") {
+          maybeAssert{
+            val x: Int = None
+            ret(x)
+          }{case 
+            None
+          =>}
+        }
+        test("chain-none") {
+          maybeAssert{
+            val x: Int = ret(0)
+            val y: Int = None
+            val z: Int = ret(y + 2)
+            ret(z)
+          }{case 
+            None
+          =>}
+        }
       }
       test("operator-indication") {
         test("single") {
@@ -68,6 +86,24 @@ object OptionFlow extends TestSuite {
             Some(3)
           =>}
         }
+        test("none") {
+          maybeAssert{
+            val x = !Option.empty[Int]
+            ret(x)
+          }{case 
+            None
+          =>}
+        }
+        test("chain-none") {
+          maybeAssert{
+            val x = !ret(0)
+            val y = !Option.empty[Int]
+            val z = !ret(y + 2)
+            ret(z)
+          }{case 
+            None
+          =>}
+        }
       }
     }
     test("errors") {
@@ -81,6 +117,14 @@ object OptionFlow extends TestSuite {
         }"""}{msg =>
           assert(msg.contains("Bind"))
           assert(msg.contains("scala.Option"))
+        }
+      }
+      test("invalid-bang") {
+        maybeError{"""maybe{
+          ret( !ret(0) )
+        }"""}{msg =>
+          assert(msg.contains("Invalid"))
+          assert(msg.contains("bang (!)"))
         }
       }
     }
