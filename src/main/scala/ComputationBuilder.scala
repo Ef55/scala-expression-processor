@@ -17,6 +17,10 @@ trait ComputationBuilder[Computation[_]] extends Builder[Computation] {
   given binder[T]: Conversion[Computation[T], T] =
     conversionToBeErased("Conversion[Computation[T], T]")
 
+  extension [T](c: Computation[T]) {
+    def unary_! : T = binder(c)
+  }
+
   final inline def apply[T](inline c: Computation[T])(using config: BuilderConfig): Computation[T] = buildComputation(this)(c)
 }
 
@@ -80,6 +84,15 @@ private def buildComputationImpl[Computation[_], T]
         case _ => None
   }
 
+  object BangApplication {
+    def unapply(t: Term): Option[Term] = t match
+      // TODO: make "unary_!" detection less approximative
+      case Apply(f@TypeApply(Ident("unary_!"), _), c :: Nil) =>
+        val typ = t.tpe
+        Some(c)
+      case _ => None
+  }
+
   object RunIf {
     def unapply(tpe: TypeRepr): Option[(TypeRepr, Boolean)] = 
       Run.unapply(tpe).map(t => (t, true))
@@ -111,8 +124,10 @@ private def buildComputationImpl[Computation[_], T]
           report.errorAndAbort(s"${name.capitalize} is invalid for ${ctx}.", s.pos)
 
       s match 
-        case ValDef(name, tt, Some(Binder(m))) => 
-          val init = transformTerm(m)(owner)
+        case ValDef(name, tt, Some(m @ (Binder(_) | BangApplication(_)))) => 
+          val init = m match 
+            case Binder(m) => transformTerm(m)(owner)
+            case BangApplication(m) => transformTerm(m)(owner)
 
           flagWarning(Flags.Lazy, "lazy", "bind")
           flagWarning(Flags.Inline, "inline", "bind")

@@ -19,7 +19,7 @@ object OptionFlow extends TestSuite {
   }
 
   val tests = Tests {
-    test("basic") {
+    test("basic-let") {
       maybeAssert{
         val x: Option[Int] = ret(0)
         x
@@ -28,34 +28,60 @@ object OptionFlow extends TestSuite {
       =>}
     }
     test("bind") {
-      maybeAssert{
-        val my: Option[Int] = ret(0)
-        val y: Int = my
-        ret(y + 1)
-      }{case 
-        Some(1)
-      =>}
+      test("type-indication") {
+        test("single") {
+          maybeAssert{
+            val my: Option[Int] = ret(0)
+            val y: Int = my
+            ret(y + 1)
+          }{case 
+            Some(1)
+          =>}
+        }
+        test("chain") {
+          maybeAssert{
+            val x: Int = ret(0)
+            val y: Int = ret(x + 1)
+            val z: Int = ret(y + 2)
+            ret(z)
+          }{case 
+            Some(3)
+          =>}
+        }
+      }
+      test("operator-indication") {
+        test("single") {
+          maybeAssert{
+            val x = ! ret(0)
+            ret(x + 1)
+          }{case
+            Some(1)
+          =>}
+        }
+        test("chain") {
+          maybeAssert{
+            val x = ! ret(0)
+            val y = ! ret(x + 1)
+            val z = ! ret(y + 2)
+            ret(z)
+          }{case 
+            Some(3)
+          =>}
+        }
+      }
     }
-    test("bind-chain") {
-      maybeAssert{
-        val x: Int = ret(0)
-        val y: Int = ret(x + 1)
-        val z: Int = ret(y + 2)
-        ret(z)
-      }{case 
-        Some(3)
-      =>}
-    }
-    test("bind-ret") {
-      maybeError{"""maybe{
-        def f(o: Option[Int]): Int =
-          val x: Int = o
-          x + 1
+    test("errors") {
+      test("bind-ret") {
+        maybeError{"""maybe{
+          def f(o: Option[Int]): Int =
+            val x: Int = o
+            x + 1
 
-        ret(f(None))
-      }"""}{msg =>
-        assert(msg.contains("Bind"))
-        assert(msg.contains("scala.Option"))
+          ret(f(None))
+        }"""}{msg =>
+          assert(msg.contains("Bind"))
+          assert(msg.contains("scala.Option"))
+        }
       }
     }
   }
