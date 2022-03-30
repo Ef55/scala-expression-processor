@@ -21,13 +21,13 @@ trait ComputationBuilder[Computation[_]] extends Builder[Computation] {
     def unary_! : T = binder(c)
   }
 
+  final inline def undefined(reason: String): Nothing = scala.compiletime.error(reason)
   final inline def apply[T](inline c: Computation[T])(using config: BuilderConfig): Computation[T] = buildComputation(this)(c)
 }
 
 trait DefaultRun[Computation[_]] { self: ComputationBuilder[Computation] =>
   inline def run[T](inline c: () => Computation[T]): Computation[T] = c()
 }
-
 
 private inline def buildComputation[Computation[_], T]
 (inline builder: ComputationBuilder[Computation])
