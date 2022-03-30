@@ -266,23 +266,17 @@ private def processAstImpl[Processed[+_], Variable[+t] <: Processed[t], T]
   }
 
   object InitializerUnwrapping {
-    def unapply(t: Term): Option[(Term, Option[Term], TypeRepr, TypeRepr)] = t match {
-      case ImplicitConversion(conv, converted, from, to) 
-        if to <:< TypeRepr.of[Variable[Any]] => 
-          val arg = conv match 
-            case Apply(_, arg :: Nil) => Some(arg)
-            case _ => None
-          Some((converted, arg, from, to))
-      case _ => None 
-    }
+    private val base = new SpecificImplicitConversion[Any, Variable[Any]]{}
+    def unapply(t: Term): Option[(Term, Option[Term])] =
+      base.unapply(t).map{ case (conversion, converted) => 
+        val subconversion = conversion match
+          case Apply(_, arg :: Nil) => Some(arg) // Retrieve the (implicit) Conversion[T, Processed[S]]
+          case _ => None
+        (converted, subconversion)
+      }
   }
 
   object AutoConstantUnwrapping extends ImplicitWrapper[Processed]
-
-  object ProcessedParameterTT {
-    def unapply(tt: TypeTree): Option[TypeRepr] = 
-      ProcessedParameter.unapply(tt.tpe)
-  }
 
   object ProcessedParameter extends Unwrap[Processed]
 
@@ -303,14 +297,14 @@ private def processAstImpl[Processed[+_], Variable[+t] <: Processed[t], T]
 
     def transformAssignee(t: Term)(owner: Symbol): Term = {
       t match 
-        case InitializerUnwrapping(init, None, from, _) /*if from <:< TypeRepr.of[Processed[Any]]*/ => init
-        case InitializerUnwrapping(init, Some(arg), from, ProcessedParameter(to)) =>
+        case InitializerUnwrapping(init, None) => init
+        case InitializerUnwrapping(init, Some(arg)) =>
           Select.unique(arg, "apply").appliedTo(transformTerm(init)(owner))
         case _ => transformTerm(t)(owner)
     }.ensuring(_.isProcessed)
 
     def transformToStatements(s: Statement)(owner: Symbol): List[Statement] = s match 
-      case ValDef(name, tt@ProcessedParameterTT(typ), Some(initializer)) =>
+      case ValDef(name, tt@ProcessedParameter.TypeTree(typ), Some(initializer)) =>
         def flagWarning(flag: Flags, name: String): Unit = 
           if s.symbol.flags.is(flag) then 
             report.warning(s"${name.capitalize} is ignored for proto-variable definitions.", s.pos)
@@ -376,9 +370,9 @@ private def processAstImpl[Processed[+_], Variable[+t] <: Processed[t], T]
           t.pos
         )
 
-      case InitializerUnwrapping(t, _, from, _) =>
+      case InitializerUnwrapping(_, _) =>
         report.errorAndAbort(
-          s"Invalid conversion to ${processor.variableType(from)}",
+          s"Invalid conversion to ${Printer.TypeReprCode.show(t.tpe)}",
           t.pos
         )
       

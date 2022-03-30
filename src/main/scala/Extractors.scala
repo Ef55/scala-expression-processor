@@ -17,6 +17,15 @@ object ImplicitConversion {
       case _ => None
 }
 
+trait SpecificImplicitConversion[F, T] {
+  def unapply(using Type[F], Type[T], Quotes)(t: quotes.reflect.Term): Option[(quotes.reflect.Term, quotes.reflect.Term)] =
+    import quotes.reflect.*
+    t match 
+      case ImplicitConversion(conversion, converted, from, to)
+        if from <:< TypeRepr.of[F] && to <:< TypeRepr.of[T] => Some((conversion, converted))
+      case _ => None
+}
+
 trait ImplicitUnwrapper[W[_]] {
   def unapply(using Type[W], Quotes)(t: quotes.reflect.Term): Option[quotes.reflect.Term] =
     import quotes.reflect.*
@@ -35,7 +44,7 @@ trait ImplicitWrapper[W[_]] {
       case _ => None
 }
 
-trait Unwrap[W[_]] {
+trait Unwrap[W[_]] { self =>
   def unapply(using Type[W], Quotes)(tt: quotes.reflect.TypeRepr): Option[quotes.reflect.TypeRepr] = 
     import quotes.reflect.*
     val bt = tt.baseType(TypeRepr.of[W].typeSymbol)
@@ -44,6 +53,11 @@ trait Unwrap[W[_]] {
         assert(cstr =:= TypeRepr.of[W])
         Some(arg)
       case _ => None
+
+  object TypeTree {
+    def unapply(using Type[W], Quotes)(tt: quotes.reflect.TypeTree): Option[quotes.reflect.TypeRepr] = 
+      self.unapply(tt.tpe)
+  }
 }
 
 def SubstituteRef(using Quotes)(ref: quotes.reflect.Symbol, replacement: quotes.reflect.Term): quotes.reflect.TreeMap =

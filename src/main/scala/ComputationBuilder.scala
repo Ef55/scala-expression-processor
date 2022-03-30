@@ -59,11 +59,11 @@ private def buildComputationImpl[Computation[_], T]
 
   object Binder extends ImplicitUnwrapper[Computation]
 
-  object Run extends Unwrap[Computation]
+  object ComputationTR extends Unwrap[Computation]
 
-  object RunIf {
+  object MaybeComputationTR {
     def unapply(tpe: TypeRepr): Option[(TypeRepr, Boolean)] = 
-      Run.unapply(tpe).map(t => (t, true))
+      ComputationTR.unapply(tpe).map(t => (t, true))
         .orElse(Some((tpe, false)))
   }
 
@@ -105,7 +105,7 @@ private def buildComputationImpl[Computation[_], T]
           flagError(Flags.Mutable, "var", "bind")
 
           val tType = tt.tpe
-          val RunIf(sType, run) = last.tpe
+          val MaybeComputationTR(sType, run) = last.tpe
 
           if !run then
             report.errorAndAbort(
@@ -160,7 +160,7 @@ private def buildComputationImpl[Computation[_], T]
 
   val owner = Symbol.spliceOwner
   val transformed = Transform.transformTerm(computation.asTerm)(owner)
-  val Run(retType) = transformed.tpe
+  val ComputationTR(retType) = transformed.tpe
   val lmbd = Lambda(
       owner, 
       MethodType(List())(
