@@ -69,10 +69,13 @@ private def buildComputationImpl[Computation[_], T]
 
   object BangApplication {
     def unapply(t: Term): Option[Term] = t match
-      // TODO: make "unary_!" detection less approximative
-      case Apply(f@TypeApply(Ident("unary_!"), _), c :: Nil) =>
-        val typ = t.tpe
-        Some(c)
+      case Apply(TypeApply(fun, _), c :: Nil) if fun.symbol.name == "unary_!" =>
+        val ftype = c.tpe
+        val ttype = t.tpe
+        if hasBaseType(ftype, TypeRepr.of[Computation]) && ftype <:< TypeRepr.of[Computation].appliedTo(ttype) then
+          Some(c)
+        else 
+          None
       case _ => None
   }
 
@@ -170,6 +173,7 @@ private def buildComputationImpl[Computation[_], T]
       (sym, _) => transformed.changeOwner(sym)
     )
   val r = builder.run(retType)(lmbd)
+  // println("=======")
   // println(s"Got: ${Printer.TreeCode.show(computation.asTerm)}")
   // println(s"Built: ${Printer.TreeCode.show(r)}")
   r.asExprOf[Computation[T]]

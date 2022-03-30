@@ -2,6 +2,8 @@ package exproc
 
 import scala.quoted.*
 
+def hasBaseType(using Quotes)(tpe: quotes.reflect.TypeRepr, base: quotes.reflect.TypeRepr): Boolean =
+  tpe.baseType(base.typeSymbol).typeSymbol.isType
 
 object ImplicitConversion {
   def unapply(using Quotes)(t: quotes.reflect.Term): Option[(quotes.reflect.Term, quotes.reflect.Term, quotes.reflect.TypeRepr, quotes.reflect.TypeRepr)] =
