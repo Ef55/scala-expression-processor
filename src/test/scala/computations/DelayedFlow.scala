@@ -16,8 +16,8 @@ object delayed extends ComputationBuilder[Lazy] {
   given ComputationBuilder[Lazy] = this
 
   override inline def bind[T, S](inline d: Lazy[T], inline f: T => Lazy[S]) = d.flatMap(f)
-  override inline def ret[T](inline t: => T) = Lazy(t)
-  override inline def run[T](inline c: () => Lazy[T]) = Lazy(()).flatMap(_ => c())
+  override inline def unit[T](inline t: => T) = Lazy(t)
+  override inline def init[T](inline c: () => Lazy[T]) = Lazy(()).flatMap(_ => c())
 }
 
 inline def delayedAssert[T](inline expr: (Any => Unit) => Lazy[T])(computeTest: String => Unit): Unit =
@@ -34,7 +34,7 @@ object DelayedFlow extends TestSuite {
   val tests = Tests {
     test("delay") {
       delayedAssert{ log =>
-        ret(log(0))
+        unit(log(0))
       }{ msg =>
         assert(msg == "0")
       }
@@ -42,7 +42,7 @@ object DelayedFlow extends TestSuite {
     test("toplevel-delay") {
       delayedAssert{ log =>
         log(0)
-        ret(0)
+        unit(0)
       }{ msg =>
         assert(msg == "0")
       }

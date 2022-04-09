@@ -6,14 +6,14 @@ import testing.*
 
 case class Wrapper[T](t: T)
 
-object wrap extends ComputationBuilder[Wrapper] with DefaultRun[Wrapper] {
+object wrap extends ComputationBuilder[Wrapper] with DefaultInit[Wrapper] {
   transparent inline given ComputationBuilder[Wrapper] = this
 
   override inline def bind[T, S](inline w: Wrapper[T], inline f: T => Wrapper[S]) = {
     val v = w.t
     f(v)
   }
-  override inline def ret[T](inline t: => T) = undefined("wrap does not define ret")
+  override inline def unit[T](inline t: => T) = undefined("wrap does not define unit")
 }
 
 object Miscellaneous extends TestSuite {
@@ -52,11 +52,11 @@ object Miscellaneous extends TestSuite {
       }
       test("cannot-be-used") {
         compileError{"""wrap{
-          val x = ! ret(0)
-          ret(x)
+          val x = ! unit(0)
+          unit(x)
         }"""}{ msg =>
           assert(msg.contains("not define"))
-          assert(msg.contains("ret"))
+          assert(msg.contains("unit"))
         }
       }
     }

@@ -1,6 +1,7 @@
 package exproc
 
 import scala.quoted.*
+import exproc.utils.*
 
 
 trait ComputationBuilder[Computation[_]] extends Builder[Computation] {
@@ -10,9 +11,9 @@ trait ComputationBuilder[Computation[_]] extends Builder[Computation] {
 
   inline def bind[T, S](inline m: Computation[T], inline f: T => Computation[S]): Computation[S]
 
-  inline def ret[T](inline t: => T): Computation[T]
+  inline def unit[T](inline t: => T): Computation[T]
 
-  inline def run[T](inline c: () => Computation[T]): Computation[T]
+  inline def init[T](inline c: () => Computation[T]): Computation[T]
 
   given binder[T]: Conversion[Computation[T], T] =
     conversionToBeErased("Conversion[Computation[T], T]")
@@ -25,8 +26,8 @@ trait ComputationBuilder[Computation[_]] extends Builder[Computation] {
   final inline def apply[T](inline c: Computation[T])(using config: BuilderConfig): Computation[T] = buildComputation(this)(c)
 }
 
-trait DefaultRun[Computation[_]] { self: ComputationBuilder[Computation] =>
-  inline def run[T](inline c: () => Computation[T]): Computation[T] = c()
+trait DefaultInit[Computation[_]] { self: ComputationBuilder[Computation] =>
+  inline def init[T](inline c: () => Computation[T]): Computation[T] = c()
 }
 
 private inline def buildComputation[Computation[_], T]
@@ -53,8 +54,8 @@ private def buildComputationImpl[Computation[_], T]
     def bind(t: TypeRepr, s: TypeRepr)(m: Term, f: Term): Term =
       member("bind").appliedToTypes(List(t, s)).appliedToArgs(List(m, f))
 
-    def run(t: TypeRepr)(c: Term): Term =
-      member("run").appliedToType(t).appliedTo(c)
+    def init(t: TypeRepr)(c: Term): Term =
+      member("init").appliedToType(t).appliedTo(c)
   }  
 
   object Binder extends ImplicitUnwrapper[Computation]
@@ -99,7 +100,7 @@ private def buildComputationImpl[Computation[_], T]
 
       s match 
         case ValDef(name, tt, Some(m @ (Binder(_) | BangApplication(_)))) => 
-          val init = m match 
+          val initializer = m match 
             case Binder(m) => transformTerm(m)(owner)
             case BangApplication(m) => transformTerm(m)(owner)
 
@@ -108,9 +109,9 @@ private def buildComputationImpl[Computation[_], T]
           flagError(Flags.Mutable, "var", "bind")
 
           val tType = tt.tpe
-          val MaybeComputationTR(sType, run) = last.tpe
+          val MaybeComputationTR(sType, valid) = last.tpe
 
-          if !run then
+          if !valid then
             report.errorAndAbort(
               s"Bind only allowed when ${TypeRepr.of[Computation].typeSymbol.fullName}[_] is expected.",
               s.pos
@@ -128,7 +129,7 @@ private def buildComputationImpl[Computation[_], T]
             }
           )
 
-          (List.empty, builder.bind(tType, sType)(init, lmbd))
+          (List.empty, builder.bind(tType, sType)(initializer, lmbd))
 
         case _ => (super.transformStatement(s)(owner) +: right, last)
 
@@ -172,7 +173,7 @@ private def buildComputationImpl[Computation[_], T]
       ), 
       (sym, _) => transformed.changeOwner(sym)
     )
-  val r = builder.run(retType)(lmbd)
+  val r = builder.init(retType)(lmbd)
   // println("=======")
   // println(s"Got: ${Printer.TreeCode.show(computation.asTerm)}")
   // println(s"Built: ${Printer.TreeCode.show(r)}")

@@ -1,6 +1,7 @@
 package exproc
 
 import scala.quoted.*
+import exproc.utils.*
 
 /** Thrown when the processing reaches and invalid state.
   * 

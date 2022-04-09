@@ -1,5 +1,7 @@
 package exproc
 
+import exproc.utils.*
+
 trait BuilderConfig {
   val printCode: Boolean
 }
