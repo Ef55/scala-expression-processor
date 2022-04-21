@@ -6,7 +6,7 @@ import testing.*
 
 case class Wrapper[T](t: T)
 
-object wrap extends ComputationBuilder[Wrapper] with DefaultInit[Wrapper] {
+object wrap extends ComputationBuilder[Wrapper] with DefaultInit[Wrapper] with DefaultSequence[Wrapper] {
   transparent inline given ComputationBuilder[Wrapper] = this
 
   override inline def bind[T, S](inline w: Wrapper[T], inline f: T => Wrapper[S]) = {

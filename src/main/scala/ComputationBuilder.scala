@@ -11,6 +11,8 @@ trait ComputationBuilder[Computation[_]] extends Builder[Computation] {
 
   inline def bind[T, S](inline m: Computation[T], inline f: T => Computation[S]): Computation[S]
 
+  inline def sequence[T, S](inline l: Computation[T], inline r: Computation[S]): Computation[S]
+
   inline def unit[T](inline t: => T): Computation[T]
 
   inline def init[T](inline c: () => Computation[T]): Computation[T]
@@ -28,6 +30,10 @@ trait ComputationBuilder[Computation[_]] extends Builder[Computation] {
 
 trait DefaultInit[Computation[_]] { self: ComputationBuilder[Computation] =>
   inline def init[T](inline c: () => Computation[T]): Computation[T] = c()
+}
+
+trait DefaultSequence[Computation[_]] { self: ComputationBuilder[Computation] =>
+  inline def sequence[T, S](inline l: Computation[T], inline r: Computation[S]): Computation[S] = { l; r }
 }
 
 private inline def buildComputation[Computation[_], T]
@@ -54,6 +60,9 @@ private def buildComputationImpl[Computation[_], T]
     def bind(t: TypeRepr, s: TypeRepr)(m: Term, f: Term): Term =
       member("bind").appliedToTypes(List(t, s)).appliedToArgs(List(m, f))
 
+    def sequence(t: TypeRepr, s: TypeRepr)(l: Term, r: Term): Term = 
+      member("sequence").appliedToTypes(List(t, s)).appliedToArgs(List(l, r))
+
     def init(t: TypeRepr)(c: Term): Term =
       member("init").appliedToType(t).appliedTo(c)
   }  
@@ -78,6 +87,14 @@ private def buildComputationImpl[Computation[_], T]
         else 
           None
       case _ => None
+  }
+
+  extension (t: Term) {
+    def isComputation: Boolean = hasBaseType(t.tpe, TypeRepr.of[Computation])
+
+    def computationType: TypeRepr =
+      assert(isComputation)
+      ComputationTR.unapply(t.tpe).get
   }
 
   object Transform extends TreeMap {
@@ -153,9 +170,20 @@ private def buildComputationImpl[Computation[_], T]
 
       case Block(statements, term) =>  
         val (sts, last) = transformToStats(statements, term)(owner)  
+
+        val (tstatements, refs) = sts.foldRight[(List[Statement], List[Term])]((Nil, Nil)){ 
+            case (statement, (statements, exprs)) => statement match
+              case t: Term if t.isComputation => 
+                val vs = Symbol.newVal(owner, s"computation", t.tpe, Flags.EmptyFlags, Symbol.noSymbol)
+                val vd = ValDef(vs, Some(t.changeOwner(vs)))
+                val ref = Ref(vs)
+                (vd :: statements, ref :: exprs)
+              case _ => (statement :: statements, exprs)
+          }
+
         Block.copy(t)(
-          sts,
-          last
+          tstatements,
+          (refs :+ last).reduceLeft( (l, r) => builder.sequence(l.computationType, r.computationType)(l, r) )
         )
 
 

@@ -16,6 +16,7 @@ object delayed extends ComputationBuilder[Lazy] {
   given ComputationBuilder[Lazy] = this
 
   override inline def bind[T, S](inline d: Lazy[T], inline f: T => Lazy[S]) = d.flatMap(f)
+  override inline def sequence[T, S](inline l: Lazy[T], inline r: Lazy[S]) = l.flatMap(_ => r)
   override inline def unit[T](inline t: => T) = Lazy(t)
   override inline def init[T](inline c: () => Lazy[T]) = Lazy(()).flatMap(_ => c())
 }
@@ -45,6 +46,15 @@ object DelayedFlow extends TestSuite {
         unit(0)
       }{ msg =>
         assert(msg == "0")
+      }
+    }
+    test("sequencing") {
+      delayedAssert{ log => 
+        log(0)
+        log(1)
+        unit(0)
+      }{ msg => 
+        assert(msg == "0\n1")
       }
     }
   }

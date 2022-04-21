@@ -4,7 +4,7 @@ import exproc.*
 import utest.*
 import testing.*
 
-object maybe extends ComputationBuilder[Option] with DefaultInit[Option] {
+object maybe extends ComputationBuilder[Option] with DefaultInit[Option] with DefaultSequence[Option] {
   transparent inline given ComputationBuilder[Option] = this
 
   override inline def bind[T, S](inline opt: Option[T], inline f: T => Option[S]) = opt.flatMap(f)
