@@ -10,6 +10,8 @@ import scala.compiletime.{ summonFrom, summonInline }
 object seq extends ComputationBuilder[Seq] with DefaultInit[Seq] {
   transparent inline given ComputationBuilder[Seq] = this
 
+  override type Bound = [T] =>> T
+
   override inline def bind[T, S](inline s: Seq[T], inline f: T => Seq[S]) = s.flatMap(f)
   override inline def sequence[T, S](inline l: Seq[T], inline r: Seq[S]) = {
     val conv = summonInline[<:<[T, S]].liftCo[Seq]

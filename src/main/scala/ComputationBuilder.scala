@@ -6,10 +6,11 @@ import exproc.utils.*
 
 trait ComputationBuilder[Computation[_]] extends Builder[Computation] {
   private final def conversionToBeErased(element: String): Nothing = 
-    throw ExpressionProcessorImplementationError(s"The given ${element} should have been erased during processing.")
+    throw BuilderImplementationError(s"The given ${element} should have been erased during processing.")
 
+  type Bound <: [T] =>> Any
 
-  inline def bind[T, S](inline m: Computation[T], inline f: T => Computation[S]): Computation[S]
+  inline def bind[T, S](inline m: Computation[T], inline f: Bound[T] => Computation[S]): Computation[S]
 
   inline def sequence[T, S](inline l: Computation[T], inline r: Computation[S]): Computation[S]
 
@@ -17,11 +18,11 @@ trait ComputationBuilder[Computation[_]] extends Builder[Computation] {
 
   inline def init[T](inline c: () => Computation[T]): Computation[T]
 
-  given binder[T]: Conversion[Computation[T], T] =
+  given binder[T]: Conversion[Computation[T], Bound[T]] =
     conversionToBeErased("Conversion[Computation[T], T]")
 
   extension [T](c: Computation[T]) {
-    def unary_! : T = binder(c)
+    def unary_! : Bound[T] = binder(c)
   }
 
   final inline def undefined(reason: String): Nothing = scala.compiletime.error(reason)

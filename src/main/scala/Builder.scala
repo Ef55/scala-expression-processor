@@ -15,6 +15,10 @@ object BuilderConfig {
   }
 }
 
+final case class BuilderImplementationError protected (msg: String) extends Error {
+  override def toString = msg
+}
+
 trait Builder[Result[_]] {
   inline def apply[T](inline expr: Result[T])(using config: BuilderConfig): Result[T]
 }

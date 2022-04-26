@@ -7,6 +7,8 @@ import testing.*
 object maybe extends ComputationBuilder[Option] with DefaultInit[Option] with DefaultSequence[Option] {
   transparent inline given ComputationBuilder[Option] = this
 
+  override type Bound = [T] =>> T
+
   override inline def bind[T, S](inline opt: Option[T], inline f: T => Option[S]) = opt.flatMap(f)
   override inline def unit[T](inline t: => T) = Some(t)
 }

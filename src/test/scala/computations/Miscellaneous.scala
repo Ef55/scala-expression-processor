@@ -9,6 +9,8 @@ case class Wrapper[T](t: T)
 object wrap extends ComputationBuilder[Wrapper] with DefaultInit[Wrapper] with DefaultSequence[Wrapper] {
   transparent inline given ComputationBuilder[Wrapper] = this
 
+  override type Bound = [T] =>> T
+
   override inline def bind[T, S](inline w: Wrapper[T], inline f: T => Wrapper[S]) = {
     val v = w.t
     f(v)
