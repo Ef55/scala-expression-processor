@@ -15,7 +15,7 @@ object BuilderConfig {
   }
 }
 
-final case class BuilderImplementationError protected (msg: String) extends Error {
+final case class BuilderImplementationError protected[exproc] (msg: String) extends Error {
   override def toString = msg
 }
 

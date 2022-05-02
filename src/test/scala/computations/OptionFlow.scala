@@ -4,7 +4,7 @@ import exproc.*
 import utest.*
 import testing.*
 
-object maybe extends ComputationBuilder[Option] with DefaultInit[Option] with DefaultSequence[Option] {
+object maybe extends ComputationBuilder[Option] with DefaultInit[Option] with DefaultSequence[Option] with NoAssign[Option] {
   transparent inline given ComputationBuilder[Option] = this
 
   override type Bound = [T] =>> T

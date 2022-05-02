@@ -16,6 +16,9 @@ object wrap extends ComputationBuilder[Wrapper] with DefaultInit[Wrapper] with D
     f(v)
   }
   override inline def unit[T](inline t: => T) = undefined("wrap does not define unit")
+
+  // Non-sense; just here to do some tests
+  override inline def assign[T](inline t: T, inline v: Wrapper[T]) = Wrapper(())
 }
 
 object Miscellaneous extends TestSuite {
@@ -41,6 +44,26 @@ object Miscellaneous extends TestSuite {
         }{case 
           Wrapper(3)
         =>}
+      }
+    }
+    test("extra-space") {
+      compileError{"""wrap{
+        var x = ! Wrapper(0)
+        x = ! Wrapper(1)
+        Wrapper(x)
+      }"""}{ msg =>
+        assert(msg.contains("bang (!)"))
+        assert(msg.contains("extra space"))  
+      }
+    }
+    test("assign-val") {
+      compileError{"""wrap{
+        val x = ! Wrapper(0)
+        x =! Wrapper(1)
+        Wrapper(x)
+      }"""}{ msg =>
+        assert(msg.contains("Assignation"))
+        assert(msg.contains("variable"))
       }
     }
     test("missing-method") {

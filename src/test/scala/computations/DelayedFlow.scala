@@ -12,7 +12,7 @@ class Lazy[T](t: => T) {
     Lazy(f(t).kick)
 }
 
-object delayed extends ComputationBuilder[Lazy] {
+object delayed extends ComputationBuilder[Lazy] with NoAssign[Lazy] {
   given ComputationBuilder[Lazy] = this
 
   override type Bound = [T] =>> T

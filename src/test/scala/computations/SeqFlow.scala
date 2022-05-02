@@ -5,9 +5,9 @@ import utest.*
 import testing.*
 
 import scala.collection.immutable.Seq
-import scala.compiletime.{ summonFrom, summonInline }
+import scala.compiletime.summonInline
 
-object seq extends ComputationBuilder[Seq] with DefaultInit[Seq] {
+object seq extends ComputationBuilder[Seq] with DefaultInit[Seq] with NoAssign[Seq] {
   transparent inline given ComputationBuilder[Seq] = this
 
   override type Bound = [T] =>> T

@@ -1,4 +1,4 @@
-val scala3Version = "3.1.2"
+val scala3Version = "3.1.3-RC2"
 
 
 
@@ -9,7 +9,7 @@ lazy val root = project
     version := "0.1.1",
 
     scalaVersion := scala3Version,
-    //scalacOptions := Seq("-Xcheck-macros"), //Cause errors with utest...
+    scalacOptions := Seq("-explain", "-feature"),
 
     assembly / assemblyOption ~= {
       _.withIncludeScala(false)

@@ -1,13 +1,13 @@
 package exproc
 
-import scala.quoted.*
 import exproc.utils.*
+import scala.quoted.*
 import scala.annotation.targetName
 
 
 trait ComputationBuilder[Computation[_]] extends Builder[Computation] {
-  private final def conversionToBeErased(element: String): Nothing = 
-    throw BuilderImplementationError(s"The given ${element} should have been erased during processing.")
+  private final def toBeErased(element: String): Nothing = 
+    throw BuilderImplementationError(s"`${element}` should have been erased during processing.")
 
   type Bound[T]
 
@@ -19,9 +19,16 @@ trait ComputationBuilder[Computation[_]] extends Builder[Computation] {
 
   inline def init[T](inline c: () => Computation[T]): Computation[T]
 
+  inline def assign[T](inline b: Bound[T], inline v: Computation[T]): Computation[Unit]
+
   extension [T](c: Computation[T]) {
     @targetName("binder")
-    def unary_! : Bound[T] = conversionToBeErased("Bang !")
+    def unary_! : Bound[T] = toBeErased("Bang !")
+  }
+
+  extension [T](b: Bound[T]) {
+    @targetName("reassign")
+    def =! (c: Computation[T]): Computation[Unit] = toBeErased("Reassign =!")
   }
 
   final inline def undefined(reason: String): Nothing = scala.compiletime.error(reason)
@@ -36,7 +43,11 @@ trait DefaultSequence[Computation[_]] { self: ComputationBuilder[Computation] =>
   inline def sequence[T, S](inline l: Computation[T], inline r: Computation[S]): Computation[S] = { l; r }
 }
 
-private inline def buildComputation[Computation[_], T]
+trait NoAssign[Computation[_]] { self: ComputationBuilder[Computation] => 
+  inline def assign[T](inline b: Bound[T], inline v: Computation[T]): Computation[Unit] = undefined("Assignations are not supported.")
+}
+
+private transparent inline def buildComputation[Computation[_], T]
 (inline builder: ComputationBuilder[Computation])
 (inline computation: Computation[T]): Computation[T] =
   ${buildComputationImpl('{builder}, '{computation})}
@@ -47,7 +58,7 @@ private def buildComputationImpl[Computation[_], T]
   import quotes.reflect.*
 
   object builder {
-    private inline def member(name: String): Term = 
+    inline def member(name: String): Term = 
       val methds = symbol.declaredMethod(name)
       assert(methds.length == 1)
       term.select(methds.head)
@@ -67,6 +78,9 @@ private def buildComputationImpl[Computation[_], T]
 
     def init(t: TypeRepr)(c: Term): Term =
       member("init").appliedToType(t).appliedTo(c)
+
+    def assign(t: TypeRepr)(b: Term, v: Term): Term = 
+      member("assign").appliedToType(t).appliedToArgs(List(b, v))
   }  
 
   object ComputationTR extends Unwrap[Computation]
@@ -97,6 +111,23 @@ private def buildComputationImpl[Computation[_], T]
       ComputationTR.unapply(t.tpe).get
   }
 
+  def buildBlock(sts: List[Statement], last: Term, owner: Symbol) = {
+    val (tstatements, refs) = sts.foldRight[(List[Statement], List[Term])]((Nil, Nil)){ 
+        case (statement, (statements, exprs)) => statement match
+          case t: Term if t.isComputation => 
+            val vs = Symbol.newVal(owner, s"computation", t.tpe, Flags.EmptyFlags, Symbol.noSymbol)
+            val vd = ValDef(vs, Some(t.changeOwner(vs)))
+            val ref = Ref(vs)
+            (vd :: statements, ref :: exprs)
+          case _ => (statement :: statements, exprs)
+      }
+
+    Block(
+      tstatements,
+      (refs :+ last).reduceLeft( (l, r) => builder.sequence(l.computationType, r.computationType)(l, r) )
+    )
+  }
+
   object Transform extends TreeMap {
 
     override def transformTree(t: Tree)(owner: Symbol): Tree = t match
@@ -108,23 +139,17 @@ private def buildComputationImpl[Computation[_], T]
 
     def transformToStatements(s: Statement)(owner: Symbol)(right: List[Statement], last: Term): (List[Statement], Term) = {
       def flagWarning(flag: Flags, name: String, ctx: String): Unit = 
-        if s.symbol.flags.is(flag) then 
+        if hasFlag(s, flag) then 
           report.warning(s"${name.capitalize} is ignored for ${ctx}.", s.pos)
-
-      def flagError(flag: Flags, name: String, ctx: String): Unit = 
-        if s.symbol.flags.is(flag) then 
-          report.errorAndAbort(s"${name.capitalize} is invalid for ${ctx}.", s.pos)
 
       s match 
         case ValDef(name, tt, Some(BangApplication(m))) => 
           val initializer = transformTerm(m)(owner)
-
+          
           flagWarning(Flags.Lazy, "lazy", "bind")
           flagWarning(Flags.Inline, "inline", "bind")
-          flagError(Flags.Mutable, "var", "bind")
 
           val ComputationTR(tType) = initializer.tpe
-          //val tType = tt.tpe
           val MaybeComputationTR(sType, valid) = last.tpe
 
           if !valid then
@@ -141,7 +166,7 @@ private def buildComputationImpl[Computation[_], T]
             ), 
             (sym, args) => {
               val arg :: Nil = args
-              SubstituteRef(s.symbol, arg.asInstanceOf[Term]).transformTerm(Block(right, last))(sym)
+              SubstituteRef(s.symbol, arg.asInstanceOf[Term]).transformTerm(buildBlock(right, last, owner))(sym)
             }
           )
 
@@ -157,11 +182,6 @@ private def buildComputationImpl[Computation[_], T]
       ls.foldRight((List.empty[Statement], transformTerm(last)(owner))){ case (l, (right, last)) => transformToStatements(l)(owner)(right, last) }
 
     override def transformTerm(t: Term)(owner: Symbol): Term = t match 
-      // case b@Binder(_) =>
-      //   report.errorAndAbort(
-      //     s"Invalid conversion to ${Printer.TypeReprCode.show(b.tpe)}",
-      //     t.pos
-      //   )
 
       case b@BangApplication(_) =>
         report.errorAndAbort(
@@ -169,24 +189,31 @@ private def buildComputationImpl[Computation[_], T]
           t.pos
         )
 
+      case Assign(assignee, BangApplication(v)) => 
+        report.errorAndAbort(
+          s"Invalid use of bang (!): it can only be used at the top-level of a value definition. Did you insert an extra space ? (`= !` ==> `=!`)",
+          t.pos
+        )
+
+      case Apply(Apply(TypeApply(f, typArgs), args1), args2) if f.symbol.name == "=!" =>
+        assert(typArgs.length == 1)
+        val vr :: Nil = args1
+        val vl :: Nil = args2
+        if !hasFlag(vr, Flags.Mutable) then 
+          report.errorAndAbort(
+            s"Assignation can only be done on variables.",
+            vr.pos
+          )
+        val ComputationTR(typ) = vl.tpe
+        builder.assign(typ)(
+          transformTerm(vr)(owner),
+          transformTerm(vl)(owner)
+        )
+
       case Block(statements, term) =>  
         val (sts, last) = transformToStats(statements, term)(owner)  
 
-        val (tstatements, refs) = sts.foldRight[(List[Statement], List[Term])]((Nil, Nil)){ 
-            case (statement, (statements, exprs)) => statement match
-              case t: Term if t.isComputation => 
-                val vs = Symbol.newVal(owner, s"computation", t.tpe, Flags.EmptyFlags, Symbol.noSymbol)
-                val vd = ValDef(vs, Some(t.changeOwner(vs)))
-                val ref = Ref(vs)
-                (vd :: statements, ref :: exprs)
-              case _ => (statement :: statements, exprs)
-          }
-
-        Block.copy(t)(
-          tstatements,
-          (refs :+ last).reduceLeft( (l, r) => builder.sequence(l.computationType, r.computationType)(l, r) )
-        )
-
+        buildBlock(sts, last, owner)
 
       case _ => super.transformTerm(t)(owner)
   }

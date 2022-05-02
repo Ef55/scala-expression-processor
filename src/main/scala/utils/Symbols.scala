@@ -11,3 +11,6 @@ def hasOwner(using Quotes)(owner: quotes.reflect.Symbol)(symbol: quotes.reflect.
   else if (symbol == Symbol.noSymbol) then false
   else hasOwner(owner)(symbol.owner)
 }
+
+def hasFlag(using Quotes)(s: quotes.reflect.Term | quotes.reflect.Statement, flag: quotes.reflect.Flags): Boolean = 
+  s.symbol.flags.is(flag)
