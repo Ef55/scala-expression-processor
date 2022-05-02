@@ -15,8 +15,10 @@ def hasOwner(using Quotes)(owner: quotes.reflect.Symbol)(symbol: quotes.reflect.
 def hasFlag(using Quotes)(s: quotes.reflect.Term | quotes.reflect.Statement, flag: quotes.reflect.Flags): Boolean = 
   s.symbol.flags.is(flag)
 
+def unique[T](seq: Seq[T]): T = 
+  assert(seq.length == 1, "Sequence was expected to contain one single element.")
+  seq.head
 
 def selectUniqueType(using Quotes)(instance: quotes.reflect.Term, base: quotes.reflect.Symbol, name: String): quotes.reflect.TypeRepr = 
-    val s = base.declaredType(name)
-    assert(s.length == 1)
-    instance.select(s.head).tpe
+    val s = unique(base.declaredType(name))
+    instance.select(s).tpe

@@ -10,3 +10,6 @@ def SubstituteRef(using Quotes)(ref: quotes.reflect.Symbol, replacement: quotes.
       case id@Ident(_) if id.symbol == ref => replacement.changeOwner(owner)
       case _ => super.transformTerm(t)(owner)
   }
+
+def chain(using Quotes)(tms: quotes.reflect.TreeMap*)(term: quotes.reflect.Term, owner: quotes.reflect.Symbol): quotes.reflect.Term =
+  tms.foldLeft(term)( (t, tm) => tm.transformTerm(t)(owner) )
