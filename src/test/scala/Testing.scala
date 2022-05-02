@@ -15,13 +15,13 @@ class Logger {
 
 object BuilderAssertions {
   inline def buildMatchAssert[Result[_], T]
-    (using inline builder: Builder[Result])
+    (using inline builder: ComputationBuilder[Result])
     (inline expr: Result[T])(inline expected: PartialFunction[Any, Unit]): Unit =
       val result = builder(expr)
       assertMatch( result )( expected )
 
   inline def buildOutAssert[Result[_], T]
-    (using inline builder: Builder[Result])
+    (using inline builder: ComputationBuilder[Result])
     (inline expr: (Any => Unit) => Result[T])(expected: String): Unit =
       given logger: Logger = Logger()
       builder(expr(logger.log))

@@ -5,7 +5,11 @@ import scala.quoted.*
 import scala.annotation.targetName
 
 
-trait ComputationBuilder[Computation[_]] extends Builder[Computation] {
+final case class BuilderImplementationError protected[exproc] (msg: String) extends Error {
+  override def toString = msg
+}
+
+trait ComputationBuilder[Computation[_]] {
   private final def toBeErased(element: String): Nothing = 
     throw BuilderImplementationError(s"`${element}` should have been erased during processing.")
 
@@ -32,7 +36,7 @@ trait ComputationBuilder[Computation[_]] extends Builder[Computation] {
   }
 
   final inline def undefined(reason: String): Nothing = scala.compiletime.error(reason)
-  final inline def apply[T](inline c: Computation[T])(using config: BuilderConfig): Computation[T] = buildComputation(this)(c)
+  final inline def apply[T](inline c: Computation[T]): Computation[T] = buildComputation(this, c)
 }
 
 trait DefaultInit[Computation[_]] { self: ComputationBuilder[Computation] =>
@@ -47,9 +51,8 @@ trait NoAssign[Computation[_]] { self: ComputationBuilder[Computation] =>
   inline def assign[T](inline b: Bound[T], inline v: Computation[T]): Computation[Unit] = undefined("Assignations are not supported.")
 }
 
-private transparent inline def buildComputation[Computation[_], T]
-(inline builder: ComputationBuilder[Computation])
-(inline computation: Computation[T]): Computation[T] =
+private inline def buildComputation[Computation[_], T]
+(inline builder: ComputationBuilder[Computation], inline computation: Computation[T]): Computation[T] =
   ${buildComputationImpl('{builder}, '{computation})}
 
 private def buildComputationImpl[Computation[_], T]
@@ -230,6 +233,7 @@ private def buildComputationImpl[Computation[_], T]
       (sym, _) => transformed.changeOwner(sym)
     )
   val r = builder.init(retType)(lmbd)
+
   // println("=======")
   // println(s"Got: ${Printer.TreeCode.show(computation.asTerm)}")
   // println(s"Built: ${Printer.TreeCode.show(r)}")
