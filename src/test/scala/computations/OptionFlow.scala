@@ -30,97 +30,44 @@ object OptionFlow extends TestSuite {
       =>}
     }
     test("bind") {
-      test("type-indication") {
-        test("single") {
-          maybeAssert{
-            val my: Option[Int] = unit(0)
-            val y: Int = my
-            unit(y + 1)
-          }{case 
-            Some(1)
-          =>}
-        }
-        test("chain") {
-          maybeAssert{
-            val x: Int = unit(0)
-            val y: Int = unit(x + 1)
-            val z: Int = unit(y + 2)
-            unit(z)
-          }{case 
-            Some(3)
-          =>}
-        }
-        test("none") {
-          maybeAssert{
-            val x: Int = None
-            unit(x)
-          }{case 
-            None
-          =>}
-        }
-        test("chain-none") {
-          maybeAssert{
-            val x: Int = unit(0)
-            val y: Int = None
-            val z: Int = unit(y + 2)
-            unit(z)
-          }{case 
-            None
-          =>}
-        }
+      test("single") {
+        maybeAssert{
+          val x = ! unit(0)
+          unit(x + 1)
+        }{case
+          Some(1)
+        =>}
       }
-      test("operator-indication") {
-        test("single") {
-          maybeAssert{
-            val x = ! unit(0)
-            unit(x + 1)
-          }{case
-            Some(1)
-          =>}
-        }
-        test("chain") {
-          maybeAssert{
-            val x = ! unit(0)
-            val y = ! unit(x + 1)
-            val z = ! unit(y + 2)
-            unit(z)
-          }{case 
-            Some(3)
-          =>}
-        }
-        test("none") {
-          maybeAssert{
-            val x = !Option.empty[Int]
-            unit(x)
-          }{case 
-            None
-          =>}
-        }
-        test("chain-none") {
-          maybeAssert{
-            val x = !unit(0)
-            val y = !Option.empty[Int]
-            val z = !unit(y + 2)
-            unit(z)
-          }{case 
-            None
-          =>}
-        }
+      test("chain") {
+        maybeAssert{
+          val x = ! unit(0)
+          val y = ! unit(x + 1)
+          val z = ! unit(y + 2)
+          unit(z)
+        }{case 
+          Some(3)
+        =>}
+      }
+      test("none") {
+        maybeAssert{
+          val x = !Option.empty[Int]
+          unit(x)
+        }{case 
+          None
+        =>}
+      }
+      test("chain-none") {
+        maybeAssert{
+          val x = !unit(0)
+          val y = !Option.empty[Int]
+          val z = !unit(y + 2)
+          unit(z)
+        }{case 
+          None
+        =>}
       }
     }
     test("errors") {
-      test("bind-unit") {
-        maybeError{"""maybe{
-          def f(o: Option[Int]): Int =
-            val x: Int = o
-            x + 1
-
-          unit(f(None))
-        }"""}{msg =>
-          assert(msg.contains("Bind"))
-          assert(msg.contains("scala.Option"))
-        }
-      }
       test("invalid-bang") {
         maybeError{"""maybe{
           unit( !unit(0) )

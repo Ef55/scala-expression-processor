@@ -2,13 +2,14 @@ package exproc
 
 import scala.quoted.*
 import exproc.utils.*
+import scala.annotation.targetName
 
 
 trait ComputationBuilder[Computation[_]] extends Builder[Computation] {
   private final def conversionToBeErased(element: String): Nothing = 
     throw BuilderImplementationError(s"The given ${element} should have been erased during processing.")
 
-  type Bound <: [T] =>> Any
+  type Bound[T]
 
   inline def bind[T, S](inline m: Computation[T], inline f: Bound[T] => Computation[S]): Computation[S]
 
@@ -18,11 +19,9 @@ trait ComputationBuilder[Computation[_]] extends Builder[Computation] {
 
   inline def init[T](inline c: () => Computation[T]): Computation[T]
 
-  given binder[T]: Conversion[Computation[T], Bound[T]] =
-    conversionToBeErased("Conversion[Computation[T], T]")
-
   extension [T](c: Computation[T]) {
-    def unary_! : Bound[T] = binder(c)
+    @targetName("binder")
+    def unary_! : Bound[T] = conversionToBeErased("Bang !")
   }
 
   final inline def undefined(reason: String): Nothing = scala.compiletime.error(reason)
@@ -56,6 +55,8 @@ private def buildComputationImpl[Computation[_], T]
     val symbol = TypeRepr.of[ComputationBuilder].typeSymbol
     val term = builderExpr.asTerm
 
+    val bound = TypeSelect(term, "Bound").tpe
+
     def computation(tpe: TypeRepr): TypeRepr = TypeRepr.of[Computation].appliedTo(tpe)
 
     def bind(t: TypeRepr, s: TypeRepr)(m: Term, f: Term): Term =
@@ -68,8 +69,6 @@ private def buildComputationImpl[Computation[_], T]
       member("init").appliedToType(t).appliedTo(c)
   }  
 
-  object Binder extends ImplicitUnwrapper[Computation]
-
   object ComputationTR extends Unwrap[Computation]
 
   object MaybeComputationTR {
@@ -81,9 +80,9 @@ private def buildComputationImpl[Computation[_], T]
   object BangApplication {
     def unapply(t: Term): Option[Term] = t match
       case Apply(TypeApply(fun, _), c :: Nil) if fun.symbol.name == "unary_!" =>
-        val ftype = c.tpe
-        val ttype = t.tpe
-        if hasBaseType(ftype, TypeRepr.of[Computation]) && ftype <:< TypeRepr.of[Computation].appliedTo(ttype) then
+        val fromType = c.tpe
+        val toType = t.tpe
+        if hasBaseType(fromType, TypeRepr.of[Computation]) && hasOwner(builder.symbol)(fun.symbol) then
           Some(c)
         else 
           None
@@ -117,16 +116,15 @@ private def buildComputationImpl[Computation[_], T]
           report.errorAndAbort(s"${name.capitalize} is invalid for ${ctx}.", s.pos)
 
       s match 
-        case ValDef(name, tt, Some(m @ (Binder(_) | BangApplication(_)))) => 
-          val initializer = m match 
-            case Binder(m) => transformTerm(m)(owner)
-            case BangApplication(m) => transformTerm(m)(owner)
+        case ValDef(name, tt, Some(BangApplication(m))) => 
+          val initializer = transformTerm(m)(owner)
 
           flagWarning(Flags.Lazy, "lazy", "bind")
           flagWarning(Flags.Inline, "inline", "bind")
           flagError(Flags.Mutable, "var", "bind")
 
-          val tType = tt.tpe
+          val ComputationTR(tType) = initializer.tpe
+          //val tType = tt.tpe
           val MaybeComputationTR(sType, valid) = last.tpe
 
           if !valid then
@@ -138,7 +136,7 @@ private def buildComputationImpl[Computation[_], T]
           val lmbd = Lambda(
             owner, 
             MethodType(List(name))(
-              _ => List(tType),
+              _ => List(tt.tpe),
               _ => builder.computation(sType)
             ), 
             (sym, args) => {
@@ -147,21 +145,23 @@ private def buildComputationImpl[Computation[_], T]
             }
           )
 
-          (List.empty, builder.bind(tType, sType)(initializer, lmbd))
+          val r = builder.bind(tType, sType)(initializer, lmbd)
+
+          (List.empty, r)
 
         case _ => (super.transformStatement(s)(owner) +: right, last)
 
-    }.ensuring(res => last.tpe =:= res._2.tpe)
+    }//.ensuring(res => last.tpe =:= res._2.tpe)
 
     def transformToStats(ls: List[Statement], last: Term)(owner: Symbol): (List[Statement], Term) =
       ls.foldRight((List.empty[Statement], transformTerm(last)(owner))){ case (l, (right, last)) => transformToStatements(l)(owner)(right, last) }
 
     override def transformTerm(t: Term)(owner: Symbol): Term = t match 
-      case b@Binder(_) =>
-        report.errorAndAbort(
-          s"Invalid conversion to ${Printer.TypeReprCode.show(b.tpe)}",
-          t.pos
-        )
+      // case b@Binder(_) =>
+      //   report.errorAndAbort(
+      //     s"Invalid conversion to ${Printer.TypeReprCode.show(b.tpe)}",
+      //     t.pos
+      //   )
 
       case b@BangApplication(_) =>
         report.errorAndAbort(

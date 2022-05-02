@@ -19,7 +19,7 @@ object ImplicitConversion {
       case _ => None
 }
 
-trait SpecificImplicitConversion[F, T] {
+trait SpecificImplicitConversionTo[F, T] {
   def unapply(using Type[F], Type[T], Quotes)(t: quotes.reflect.Term): Option[(quotes.reflect.Term, quotes.reflect.Term)] =
     import quotes.reflect.*
     t match 
