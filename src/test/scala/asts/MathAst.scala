@@ -52,7 +52,7 @@ object math extends AstBuilder[AST.MathExpr] {
     val conv2 = conv.liftCo[MathExpr].flip
     conv2(Constant(conv(t)): MathExpr[Int])
   
-  override inline def sequence[T, S](inline first: MathExpr[T], inline second: MathExpr[S]) = 
+  override inline def combine[T, S](inline first: MathExpr[T], inline second: MathExpr[S]) = 
     Sequence(first, second)
 
   //override def ifThenElse[T](cond: MathExpr[Boolean], thenn: MathExpr[T], elze: MathExpr[T]) = If(cond, thenn, elze)
@@ -312,6 +312,26 @@ object MathAst extends TestSuite {
             assert(x1 != y1, x1 != y2)
             assert(x2 != y1, x2 != y2)
         }
+        test("for-generator") {
+          mathAssert{
+            var x: Variable[Int] = ! 0
+            for i <- 1 until 3 yield
+              x =! Constant(i)
+            x =! Constant(3)
+          }{case 
+            Sequence(
+              Initialize(x1, Constant(0)),
+              Sequence(
+                Sequence(
+                  Assign(x2, Constant(1)),
+                  Assign(x3, Constant(2))
+                ),
+                Assign(x4, Constant(3))
+              )
+            )
+            if x1 == x2 && x2 == x3 && x3 == x4
+          =>}
+        }
       }
       test("block-init") {
         mathAssert{
@@ -351,23 +371,5 @@ object MathAst extends TestSuite {
         })(2)
       }
     }
-
-//     //test("WIP") {
-//       // test("for") {
-//       //   mathAssert{
-//       //     var x: Variable[Int] = 0
-//       //     for i <- 1 until 3 yield
-//       //       x = Constant(i)
-//       //   }{case 
-//       //     Sequence(
-//       //       Sequence(
-//       //         Initialize(VariableName("x"), Constant(0)),
-//       //         Assign(VariableName("x"), Constant(1))
-//       //       ),
-//       //       Assign(VariableName("x"), Constant(2))
-//       //     )
-//       //   =>}
-//       // }
-//     //}
   }
 }

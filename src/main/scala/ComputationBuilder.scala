@@ -14,10 +14,13 @@ trait ComputationBuilder[Computation[_]] {
     throw BuilderImplementationError(s"`${element}` should have been erased during processing.")
 
   type Bound[T]
+  type Sequence[T] = Seq[T] // Could (should?) be generalized (i.e. abstracted)
 
   inline def bind[T, S](inline m: Computation[T], inline f: Bound[T] => Computation[S]): Computation[S]
 
-  inline def sequence[T, S](inline l: Computation[T], inline r: Computation[S]): Computation[S]
+  inline def combine[T, S](inline l: Computation[T], inline r: Computation[S]): Computation[S]
+
+  inline def sequence[T](inline seq: Sequence[Computation[T]]): Computation[T] = seq.reduceLeft(combine(_, _))
 
   inline def unit[T](inline t: => T): Computation[T]
 
@@ -44,7 +47,8 @@ trait DefaultInit[Computation[_]] { self: ComputationBuilder[Computation] =>
 }
 
 trait DefaultSequence[Computation[_]] { self: ComputationBuilder[Computation] =>
-  inline def sequence[T, S](inline l: Computation[T], inline r: Computation[S]): Computation[S] = { l; r }
+  //inline def sequence[T](inline seq: Sequence[Computation[T]]): Computation[T] = seq.reduceLeft(combine(_, _))
+  inline def combine[T, S](inline l: Computation[T], inline r: Computation[S]): Computation[S] = { l; r }
 }
 
 trait NoAssign[Computation[_]] { self: ComputationBuilder[Computation] => 
@@ -70,14 +74,18 @@ private def buildComputationImpl[Computation[_], T]
     val term = builderExpr.asTerm
 
     val bound = TypeSelect(term, "Bound").tpe
+    val seq = selectUniqueType(term, symbol, "Sequence")
 
     def computation(tpe: TypeRepr): TypeRepr = TypeRepr.of[Computation].appliedTo(tpe)
 
     def bind(t: TypeRepr, s: TypeRepr)(m: Term, f: Term): Term =
       member("bind").appliedToTypes(List(t, s)).appliedToArgs(List(m, f))
 
-    def sequence(t: TypeRepr, s: TypeRepr)(l: Term, r: Term): Term = 
-      member("sequence").appliedToTypes(List(t, s)).appliedToArgs(List(l, r))
+    def combine(t: TypeRepr, s: TypeRepr)(l: Term, r: Term): Term = 
+      member("combine").appliedToTypes(List(t, s)).appliedToArgs(List(l, r))
+
+    def sequence(t: TypeRepr)(ls: Term): Term =
+      member("sequence").appliedToType(t).appliedTo(ls)
 
     def init(t: TypeRepr)(c: Term): Term =
       member("init").appliedToType(t).appliedTo(c)
@@ -85,14 +93,6 @@ private def buildComputationImpl[Computation[_], T]
     def assign(t: TypeRepr)(b: Term, v: Term): Term = 
       member("assign").appliedToType(t).appliedToArgs(List(b, v))
   }  
-
-  object ComputationTR extends Unwrap[Computation]
-
-  object MaybeComputationTR {
-    def unapply(tpe: TypeRepr): Option[(TypeRepr, Boolean)] = 
-      ComputationTR.unapply(tpe).map(t => (t, true))
-        .orElse(Some((tpe, false)))
-  }
 
   object BangApplication {
     def unapply(t: Term): Option[Term] = t match
@@ -109,9 +109,18 @@ private def buildComputationImpl[Computation[_], T]
   extension (t: Term) {
     def isComputation: Boolean = hasBaseType(t.tpe, TypeRepr.of[Computation])
 
+    def isComputationSeq: Boolean = 
+      unwrap(builder.seq)(t.tpe)
+        .map(t => hasBaseType(t, TypeRepr.of[Computation]))
+        .getOrElse(false)
+
     def computationType: TypeRepr =
       assert(isComputation)
-      ComputationTR.unapply(t.tpe).get
+      unwrap(TypeRepr.of[Computation])(t.tpe).get
+
+    def computationSeqType: TypeRepr =
+      assert(isComputationSeq)
+      unwrap(TypeRepr.of[Computation])(unwrap(builder.seq)(t.tpe).get).get
   }
 
   def buildBlock(sts: List[Statement], last: Term, owner: Symbol) = {
@@ -122,12 +131,20 @@ private def buildComputationImpl[Computation[_], T]
             val vd = ValDef(vs, Some(t.changeOwner(vs)))
             val ref = Ref(vs)
             (vd :: statements, ref :: exprs)
+          case t: Term if t.isComputationSeq => 
+            val vs = Symbol.newVal(owner, s"computationSeq", unwrap(TypeRepr.of[Seq])(t.tpe).get, Flags.EmptyFlags, Symbol.noSymbol)
+            val typ = t.computationSeqType
+            val vd = ValDef(vs, Some(
+              builder.sequence(typ)(t.changeOwner(vs))
+            ))
+            val ref = Ref(vs)
+            (vd :: statements, ref :: exprs)
           case _ => (statement :: statements, exprs)
       }
 
     Block(
       tstatements,
-      (refs :+ last).reduceLeft( (l, r) => builder.sequence(l.computationType, r.computationType)(l, r) )
+      (refs :+ last).reduceLeft( (l, r) => builder.combine(l.computationType, r.computationType)(l, r) )
     )
   }
 
@@ -152,14 +169,14 @@ private def buildComputationImpl[Computation[_], T]
           flagWarning(Flags.Lazy, "lazy", "bind")
           flagWarning(Flags.Inline, "inline", "bind")
 
-          val ComputationTR(tType) = initializer.tpe
-          val MaybeComputationTR(sType, valid) = last.tpe
+          val tType = initializer.computationType
 
-          if !valid then
+          if !last.isComputation then 
             report.errorAndAbort(
-              s"Bind only allowed when ${TypeRepr.of[Computation].typeSymbol.fullName}[_] is expected.",
+              s"Bind only allows a computation to be returned; got `${Printer.TypeReprCode.show(last.tpe)}`.",
               s.pos
             )
+          val sType = last.computationType
 
           val lmbd = Lambda(
             owner, 
@@ -207,7 +224,7 @@ private def buildComputationImpl[Computation[_], T]
             s"Assignation can only be done on variables.",
             vr.pos
           )
-        val ComputationTR(typ) = vl.tpe
+        val typ = vl.computationType
         builder.assign(typ)(
           transformTerm(vr)(owner),
           transformTerm(vl)(owner)
@@ -223,7 +240,7 @@ private def buildComputationImpl[Computation[_], T]
 
   val owner = Symbol.spliceOwner
   val transformed = Transform.transformTerm(computation.asTerm)(owner)
-  val ComputationTR(retType) = transformed.tpe
+  val retType = transformed.computationType
   val lmbd = Lambda(
       owner, 
       MethodType(List())(

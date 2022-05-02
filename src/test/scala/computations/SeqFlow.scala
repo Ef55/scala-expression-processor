@@ -13,7 +13,7 @@ object seq extends ComputationBuilder[Seq] with DefaultInit[Seq] with NoAssign[S
   override type Bound = [T] =>> T
 
   override inline def bind[T, S](inline s: Seq[T], inline f: T => Seq[S]) = s.flatMap(f)
-  override inline def sequence[T, S](inline l: Seq[T], inline r: Seq[S]) = {
+  override inline def combine[T, S](inline l: Seq[T], inline r: Seq[S]) = {
     val conv = summonInline[<:<[T, S]].liftCo[Seq]
     conv(l) ++ r
   }

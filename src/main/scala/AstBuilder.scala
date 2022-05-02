@@ -12,7 +12,7 @@ trait AstBuilder[Tree[_]] extends ComputationBuilder[Tree] {
   inline def freshVariable[T]: Variable[T]
   inline def initialize[T](inline va: Variable[T], inline init: Tree[T]): Tree[Unit]
   inline def constant[T](inline t: T): Tree[T]
-  inline def sequence[T, S](inline l: Tree[T], inline r: Tree[S]): Tree[S]
+  inline def combine[T, S](inline l: Tree[T], inline r: Tree[S]): Tree[S]
 
   // Computation expression implementation
 
@@ -20,7 +20,7 @@ trait AstBuilder[Tree[_]] extends ComputationBuilder[Tree] {
 
   override inline def bind[T, S](inline m: Tree[T], inline f: Variable[T] => Tree[S]): Tree[S] =
     val v = freshVariable[T]
-    sequence(initialize(v, m), f(v))
+    combine(initialize(v, m), f(v))
 
   override inline def unit[T](inline t: => T): Tree[T] =
     constant[T](t)
