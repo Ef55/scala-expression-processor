@@ -44,6 +44,9 @@ trait ComputationBuilder[Computation[_]] {
   given binder[T]: Conversion[Computation[T], Bound[T]] =
     toBeErased("Binder")
 
+  given extendedBinder[T, S](using Conversion[T, Computation[S]]): Conversion[T, Bound[S]] =
+    toBeErased("Extended binder")
+
   final inline def undefined(reason: String): Nothing = scala.compiletime.error(reason)
   final inline def apply[T](inline c: Computation[T]): Computation[T] = buildComputation(this, c)
 }
@@ -70,6 +73,8 @@ private def buildComputationImpl[Computation[_], T]
 (using Type[Computation], Type[T], Quotes): Expr[Computation[T]] = 
   import quotes.reflect.*
 
+  given tprinter: Printer[TypeRepr] = Printer.TypeReprCode
+
   object builder {
     inline def member(name: String): Term = 
       val methds = computationBuilderSymbol.declaredMethod(name)
@@ -82,6 +87,7 @@ private def buildComputationImpl[Computation[_], T]
     val reassignSymbol = unique(computationBuilderSymbol.declaredMethod("=!"))
 
     val binderSymbol = unique(computationBuilderSymbol.declaredMethod("binder"))
+    val extBinderSymbol = unique(computationBuilderSymbol.declaredMethod("extendedBinder"))
 
     val term = builderExpr.asTerm
 
@@ -109,8 +115,8 @@ private def buildComputationImpl[Computation[_], T]
   object BangApplication {
     def unapply(t: Term): Option[Term] = t match
       case Apply(TypeApply(fun, _), c :: Nil) if fun.symbol == builder.bangSymbol =>
-        assert(hasBaseType(t.tpe, builder.bound))
-        assert(hasBaseType(c.tpe, TypeRepr.of[Computation]))
+        //assert(hasBaseType(t.tpe, builder.bound), s"${t.tpe.show} < ${builder.bound.show}")
+        assert(hasBaseType(c.tpe, TypeRepr.of[Computation]), s"${c.tpe.show}")
         Some(c)
       case _ => None
   }
@@ -162,11 +168,20 @@ private def buildComputationImpl[Computation[_], T]
       case Apply(Select(conv, "apply"), arg :: Nil) if conv.symbol == builder.binderSymbol => 
         assert(arg.isComputation)
         Some(arg)
+      case Apply(Select(Apply(conv, subconv :: Nil), "apply"), arg :: Nil) if conv.symbol == builder.extBinderSymbol =>
+        val carg =  selectUniqueMethod(subconv, "apply").appliedTo(arg)
+        assert(carg.isComputation, s"${carg.tpe.show}")
+        Some(carg)
       case _ => None
   }
 
   object Desugar extends TreeMap {
     override def transformTerm(t: Term)(owner: Symbol): Term = t match 
+      case Assign(assignee, TypeBinderApplication(v)) =>
+        Ref(builder.reassignSymbol)
+          .appliedToType(v.computationType)
+          .appliedTo(transformTerm(assignee)(owner))
+          .appliedTo(transformTerm(v)(owner))
       case TypeBinderApplication(arg) =>
         Ref(builder.bangSymbol)
           .appliedToType(arg.computationType)
@@ -205,7 +220,7 @@ private def buildComputationImpl[Computation[_], T]
 
           if !last.isComputation then 
             report.errorAndAbort(
-              s"Bind only allows a computation to be returned; got `${Printer.TypeReprCode.show(last.tpe)}`.",
+              s"Bind only allows a computation to be returned; got `${last.tpe.show}`.",
               s.pos
             )
           val sType = last.computationType

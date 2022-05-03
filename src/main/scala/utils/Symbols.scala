@@ -19,6 +19,10 @@ def unique[T](seq: Seq[T]): T =
   assert(seq.length == 1, "Sequence was expected to contain one single element.")
   seq.head
 
+def selectUniqueMethod(using Quotes)(instance: quotes.reflect.Term, name: String): quotes.reflect.Term = 
+    val s = unique(instance.tpe.typeSymbol.declaredMethod(name))
+    instance.select(s)
+
 def selectUniqueType(using Quotes)(instance: quotes.reflect.Term, base: quotes.reflect.Symbol, name: String): quotes.reflect.TypeRepr = 
     val s = unique(base.declaredType(name))
     instance.select(s).tpe

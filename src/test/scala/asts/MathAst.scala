@@ -35,7 +35,7 @@ object math extends AstBuilder[AST.MathExpr] {
     def ===(n: MathExpr[T]) = Eq(m, n)
   }
 
-  given Conversion[Boolean, MathExpr[Int]] with
+  given boolToInt: Conversion[Boolean, MathExpr[Int]] with
     def apply(b: Boolean) = if b then Constant(1) else Constant(0)
 
   given autoConst: Conversion[Int, MathExpr[Int]] with 
@@ -85,7 +85,7 @@ object MathAst extends TestSuite {
       }
       test("equality") {
         mathAssert{
-          val x = ! 0
+          val x: Variable[Int] = 0
           x === 0
         }{ case 
           Sequence(
@@ -97,8 +97,8 @@ object MathAst extends TestSuite {
       }
       test("assignation-with-val") {
         mathAssert{
-          var x: Variable[Int] = ! (-1)
-          val y: Variable[Int] = ! 0
+          var x: Variable[Int] = -1
+          val y: Variable[Int] = 0
           x =! y + Constant(5)
         }{ case 
           Sequence(
@@ -112,7 +112,7 @@ object MathAst extends TestSuite {
       }
       test("bool-to-constant") {
         mathAssert{
-          var x: Variable[Int] = ! 0
+          var x: Variable[Int] = 0
           x =! true
         }{ case
           Sequence(
@@ -124,8 +124,8 @@ object MathAst extends TestSuite {
       }
       test("re-assignation") {
         mathAssert{
-          var x: Variable[Int] = ! 0
-          x =! true
+          var x: Variable[Int] = 0
+          x = true
           x =! 2
         }{ case
           Sequence(
@@ -142,7 +142,7 @@ object MathAst extends TestSuite {
     test("variables") {
       test("constant-init") {
         mathAssert{
-          val x: Variable[Int] = ! 0
+          val x: Variable[Int] = 0
           x
         }{case 
           Sequence(
@@ -153,8 +153,8 @@ object MathAst extends TestSuite {
       }
       test("expr-init") {
         mathAssert{
-          val x: Variable[Int] = ! 0
-          val y: Variable[Int] = ! ( x + Constant(1) )
+          val x: Variable[Int] = 0
+          val y: Variable[Int] = x + Constant(1)
           val z: Variable[Int] = ! y
           z
         }{case 
@@ -168,14 +168,14 @@ object MathAst extends TestSuite {
               )
             )
           )
-          if x1 == x2 && y1 == y2 && z1 == z2 
+        => assert(x1 == x2 && y1 == y2 && z1 == z2 
             && x1 != y1 && y1 != z1 && z1 != x1
-        =>}
+        )}
       }
     }
     test("sequencing") {
       mathAssert{
-        var x: Variable[Int] = ! 0
+        var x: Variable[Int] = 0
         x =! Constant(1)
       }{ case
         Sequence(
@@ -291,10 +291,10 @@ object MathAst extends TestSuite {
     test("extra-features") {
       test("variable-shadowing") {
         mathAssert{
-          val x: Variable[Int] = ! 0
+          val x: Variable[Int] = 0
           x === Constant(0)
           {
-            val x: Variable[Int] = ! 1
+            val x: Variable[Int] = 1
             x === Constant(1)
           }
         }{
@@ -312,31 +312,31 @@ object MathAst extends TestSuite {
             assert(x1 != y1, x1 != y2)
             assert(x2 != y1, x2 != y2)
         }
-        test("for-generator") {
-          mathAssert{
-            var x: Variable[Int] = ! 0
-            for i <- 1 until 3 yield
-              x =! Constant(i)
-            x =! Constant(3)
-          }{case 
+      }
+      test("for-generator") {
+        mathAssert{
+          var x: Variable[Int] = 0
+          for i <- 1 until 3 yield
+            x =! Constant(i)
+          x =! Constant(3)
+        }{case 
+          Sequence(
+            Initialize(x1, Constant(0)),
             Sequence(
-              Initialize(x1, Constant(0)),
               Sequence(
-                Sequence(
-                  Assign(x2, Constant(1)),
-                  Assign(x3, Constant(2))
-                ),
-                Assign(x4, Constant(3))
-              )
+                Assign(x2, Constant(1)),
+                Assign(x3, Constant(2))
+              ),
+              Assign(x4, Constant(3))
             )
-            if x1 == x2 && x2 == x3 && x3 == x4
-          =>}
-        }
+          )
+          if x1 == x2 && x2 == x3 && x3 == x4
+        =>}
       }
       test("block-init") {
         mathAssert{
-          val x: Variable[Int] = ! {
-            val y: Variable[Int] = ! 0
+          val x: Variable[Int] = !{
+            val y: Variable[Int] = 0
             y
           }
           x
@@ -357,15 +357,15 @@ object MathAst extends TestSuite {
     test("side-effects") {
       test("vals") {
         mathAutoOut(log => {
-          val x: Variable[Int] = ! Constant{ log(0); 0}
-          var y: Variable[Int] = ! Constant{ log(1); 1}
-          val z: Variable[Int] = ! Constant{ log(2); 1}
+          val x: Variable[Int] = Constant{ log(0); 0}
+          var y: Variable[Int] = Constant{ log(1); 1}
+          val z: Variable[Int] = Constant{ log(2); 1}
           x
         })(3)
       }
       test("block") {
         mathAutoOut(log => {
-          val x: Variable[Int] = ! Constant{ log(0); 0}
+          val x: Variable[Int] = Constant{ log(0); 0}
           log(1)
           x
         })(2)
