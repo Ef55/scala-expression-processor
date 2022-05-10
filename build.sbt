@@ -6,7 +6,8 @@ lazy val root = project
   .in(file("."))
   .settings(
     name := "expressions-processor",
-    version := "0.1.1",
+    version := "0.2.0",
+    isSnapshot := true,
 
     scalaVersion := scala3Version,
     scalacOptions := Seq("-explain", "-feature"),

@@ -6,7 +6,7 @@ import testing.*
 
 case class Wrapper[T](t: T)
 
-object wrap extends ComputationBuilder[Wrapper] with DefaultInit[Wrapper] with DefaultSequence[Wrapper] {
+object wrap extends ComputationBuilder[Wrapper] with DefaultInit[Wrapper] with DefaultCombine[Wrapper] {
   transparent inline given ComputationBuilder[Wrapper] = this
 
   override type Bound = [T] =>> T

@@ -85,7 +85,7 @@ object MathAst extends TestSuite {
       }
       test("equality") {
         mathAssert{
-          val x: Variable[Int] = 0
+          val x: Variable[Int] = ! 0
           x === 0
         }{ case 
           Sequence(
@@ -97,8 +97,8 @@ object MathAst extends TestSuite {
       }
       test("assignation-with-val") {
         mathAssert{
-          var x: Variable[Int] = -1
-          val y: Variable[Int] = 0
+          var x: Variable[Int] = ! (-1)
+          val y: Variable[Int] = ! 0
           x =! y + Constant(5)
         }{ case 
           Sequence(
@@ -112,7 +112,7 @@ object MathAst extends TestSuite {
       }
       test("bool-to-constant") {
         mathAssert{
-          var x: Variable[Int] = 0
+          var x: Variable[Int] = ! 0
           x =! true
         }{ case
           Sequence(
@@ -124,8 +124,8 @@ object MathAst extends TestSuite {
       }
       test("re-assignation") {
         mathAssert{
-          var x: Variable[Int] = 0
-          x = true
+          var x: Variable[Int] = ! 0
+          x =! true
           x =! 2
         }{ case
           Sequence(
@@ -142,7 +142,7 @@ object MathAst extends TestSuite {
     test("variables") {
       test("constant-init") {
         mathAssert{
-          val x: Variable[Int] = 0
+          val x: Variable[Int] = ! 0
           x
         }{case 
           Sequence(
@@ -153,8 +153,8 @@ object MathAst extends TestSuite {
       }
       test("expr-init") {
         mathAssert{
-          val x: Variable[Int] = 0
-          val y: Variable[Int] = x + Constant(1)
+          val x: Variable[Int] = ! 0
+          val y: Variable[Int] = !( x + Constant(1) )
           val z: Variable[Int] = ! y
           z
         }{case 
@@ -175,7 +175,7 @@ object MathAst extends TestSuite {
     }
     test("sequencing") {
       mathAssert{
-        var x: Variable[Int] = 0
+        var x: Variable[Int] = ! 0
         x =! Constant(1)
       }{ case
         Sequence(
@@ -291,10 +291,10 @@ object MathAst extends TestSuite {
     test("extra-features") {
       test("variable-shadowing") {
         mathAssert{
-          val x: Variable[Int] = 0
+          val x: Variable[Int] = ! 0
           x === Constant(0)
           {
-            val x: Variable[Int] = 1
+            val x: Variable[Int] = ! 1
             x === Constant(1)
           }
         }{
@@ -315,7 +315,7 @@ object MathAst extends TestSuite {
       }
       test("for-generator") {
         mathAssert{
-          var x: Variable[Int] = 0
+          var x: Variable[Int] = ! 0
           for i <- 1 until 3 yield
             x =! Constant(i)
           x =! Constant(3)
@@ -336,7 +336,7 @@ object MathAst extends TestSuite {
       test("block-init") {
         mathAssert{
           val x: Variable[Int] = !{
-            val y: Variable[Int] = 0
+            val y: Variable[Int] = ! 0
             y
           }
           x
@@ -357,15 +357,15 @@ object MathAst extends TestSuite {
     test("side-effects") {
       test("vals") {
         mathAutoOut(log => {
-          val x: Variable[Int] = Constant{ log(0); 0}
-          var y: Variable[Int] = Constant{ log(1); 1}
-          val z: Variable[Int] = Constant{ log(2); 1}
+          val x: Variable[Int] = ! Constant{ log(0); 0}
+          var y: Variable[Int] = ! Constant{ log(1); 1}
+          val z: Variable[Int] = ! Constant{ log(2); 1}
           x
         })(3)
       }
       test("block") {
         mathAutoOut(log => {
-          val x: Variable[Int] = Constant{ log(0); 0}
+          val x: Variable[Int] = ! Constant{ log(0); 0}
           log(1)
           x
         })(2)

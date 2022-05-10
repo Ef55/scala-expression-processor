@@ -4,7 +4,7 @@ import exproc.*
 import utest.*
 import testing.*
 
-object maybe extends ComputationBuilder[Option] with DefaultInit[Option] with DefaultSequence[Option] with NoAssign[Option] {
+object maybe extends ComputationBuilder[Option] with DefaultInit[Option] with DefaultCombine[Option] with NoAssign[Option] {
   transparent inline given ComputationBuilder[Option] = this
 
   override type Bound = [T] =>> T
@@ -69,44 +69,45 @@ object OptionFlow extends TestSuite {
           =>}
         }
       }
-      test("type") {
-        test("single") {
-          maybeAssert{
-            val x: Int = unit(0)
-            unit(x + 1)
-          }{case
-            Some(1)
-          =>}
-        }
-        test("chain") {
-          maybeAssert{
-            val x: Int = unit(0)
-            val y: Int = unit(x + 1)
-            val z: Int = unit(y + 2)
-            unit(z)
-          }{case 
-            Some(3)
-          =>}
-        }
-        test("none") {
-          maybeAssert{
-            val x: Int = Option.empty[Int]
-            unit(x)
-          }{case 
-            None
-          =>}
-        }
-        test("chain-none") {
-          maybeAssert{
-            val x: Int = unit(0)
-            val y: Int = Option.empty[Int]
-            val z: Int = unit(y + 2)
-            unit(z)
-          }{case 
-            None
-          =>}
-        }
-      }
+      // Removed feature
+      // test("type") {
+      //   test("single") {
+      //     maybeAssert{
+      //       val x: Int = unit(0)
+      //       unit(x + 1)
+      //     }{case
+      //       Some(1)
+      //     =>}
+      //   }
+      //   test("chain") {
+      //     maybeAssert{
+      //       val x: Int = unit(0)
+      //       val y: Int = unit(x + 1)
+      //       val z: Int = unit(y + 2)
+      //       unit(z)
+      //     }{case 
+      //       Some(3)
+      //     =>}
+      //   }
+      //   test("none") {
+      //     maybeAssert{
+      //       val x: Int = Option.empty[Int]
+      //       unit(x)
+      //     }{case 
+      //       None
+      //     =>}
+      //   }
+      //   test("chain-none") {
+      //     maybeAssert{
+      //       val x: Int = unit(0)
+      //       val y: Int = Option.empty[Int]
+      //       val z: Int = unit(y + 2)
+      //       unit(z)
+      //     }{case 
+      //       None
+      //     =>}
+      //   }
+      // }
     }
     test("errors") {
       test("invalid-bang") {
@@ -117,16 +118,16 @@ object OptionFlow extends TestSuite {
           assert(msg.contains("bang (!)"))
         }
       }
-      test("invalid-conversion") {
-        maybeError{"""maybe{
-          def f(i: Int) = Some(i)
+      // test("invalid-conversion") {
+      //   maybeError{"""maybe{
+      //     def f(i: Int) = Some(i)
 
-          f(unit(0))
-        }"""}{msg =>
-          assert(msg.contains("Invalid"))
-          assert(msg.contains("bang (!)"))
-        }
-      }
+      //     f(unit(0))
+      //   }"""}{msg =>
+      //     assert(msg.contains("Invalid"))
+      //     assert(msg.contains("bang (!)"))
+      //   }
+      // }
     }
   }
 

@@ -41,12 +41,6 @@ trait ComputationBuilder[Computation[_]] {
     def =! (c: Computation[T]): Computation[Unit] = toBeErased("Reassign =!")
   }
 
-  given binder[T]: Conversion[Computation[T], Bound[T]] =
-    toBeErased("Binder")
-
-  given extendedBinder[T, S](using Conversion[T, Computation[S]]): Conversion[T, Bound[S]] =
-    toBeErased("Extended binder")
-
   final inline def undefined(reason: String): Nothing = scala.compiletime.error(reason)
   final inline def apply[T](inline c: Computation[T]): Computation[T] = buildComputation(this, c)
 }
@@ -55,7 +49,7 @@ trait DefaultInit[Computation[_]] { self: ComputationBuilder[Computation] =>
   inline def init[T](inline c: () => Computation[T]): Computation[T] = c()
 }
 
-trait DefaultSequence[Computation[_]] { self: ComputationBuilder[Computation] =>
+trait DefaultCombine[Computation[_]] { self: ComputationBuilder[Computation] =>
   //inline def sequence[T](inline seq: Sequence[Computation[T]]): Computation[T] = seq.reduceLeft(combine(_, _))
   inline def combine[T, S](inline l: Computation[T], inline r: Computation[S]): Computation[S] = { l; r }
 }
@@ -86,9 +80,6 @@ private def buildComputationImpl[Computation[_], T]
     val bangSymbol = unique(computationBuilderSymbol.declaredMethod("unary_!"))
     val reassignSymbol = unique(computationBuilderSymbol.declaredMethod("=!"))
 
-    val binderSymbol = unique(computationBuilderSymbol.declaredMethod("binder"))
-    val extBinderSymbol = unique(computationBuilderSymbol.declaredMethod("extendedBinder"))
-
     val term = builderExpr.asTerm
 
     val bound = selectUniqueType(term, computationBuilderSymbol, "Bound")
@@ -114,7 +105,7 @@ private def buildComputationImpl[Computation[_], T]
 
   object BangApplication {
     def unapply(t: Term): Option[Term] = t match
-      case Apply(TypeApply(fun, _), c :: Nil) if fun.symbol == builder.bangSymbol =>
+      case Apply(TypeApply(fun, _), c :: Nil) if overrides(fun.symbol, builder.bangSymbol) =>
         //assert(hasBaseType(t.tpe, builder.bound), s"${t.tpe.show} < ${builder.bound.show}")
         assert(hasBaseType(c.tpe, TypeRepr.of[Computation]), s"${c.tpe.show}")
         Some(c)
@@ -163,38 +154,6 @@ private def buildComputationImpl[Computation[_], T]
     )
   }
 
-  object TypeBinderApplication {
-    def unapply(t: Term): Option[Term] = t match 
-      case Apply(Select(conv, "apply"), arg :: Nil) if conv.symbol == builder.binderSymbol => 
-        assert(arg.isComputation)
-        Some(arg)
-      case Apply(Select(Apply(conv, subconv :: Nil), "apply"), arg :: Nil) if conv.symbol == builder.extBinderSymbol =>
-        val carg =  selectUniqueMethod(subconv, "apply").appliedTo(arg)
-        assert(carg.isComputation, s"${carg.tpe.show}")
-        Some(carg)
-      case _ => None
-  }
-
-  object Desugar extends TreeMap {
-    override def transformTerm(t: Term)(owner: Symbol): Term = t match 
-      case Assign(assignee, TypeBinderApplication(v)) =>
-        Ref(builder.reassignSymbol)
-          .appliedToType(v.computationType)
-          .appliedTo(transformTerm(assignee)(owner))
-          .appliedTo(transformTerm(v)(owner))
-      case TypeBinderApplication(arg) =>
-        Ref(builder.bangSymbol)
-          .appliedToType(arg.computationType)
-          .appliedTo(transformTerm(arg)(owner))
-      case _ => 
-        if t.symbol == builder.binderSymbol then
-          report.warning(
-            s"Use of type-binder as value.",
-            t.pos
-          )
-        super.transformTerm(t)(owner)
-  }
-
   object Transform extends TreeMap {
 
     override def transformTree(t: Tree)(owner: Symbol): Tree = t match
@@ -223,6 +182,9 @@ private def buildComputationImpl[Computation[_], T]
               s"Bind only allows a computation to be returned; got `${last.tpe.show}`.",
               s.pos
             )
+
+          (last +: right).foreach(CheckNotAssigned(s.symbol).transformStatement(_)(owner))
+
           val sType = last.computationType
 
           val lmbd = Lambda(
@@ -262,7 +224,7 @@ private def buildComputationImpl[Computation[_], T]
           t.pos
         )
 
-      case Apply(Apply(TypeApply(f, typArgs), args1), args2) if f.symbol == builder.reassignSymbol =>
+      case Apply(Apply(TypeApply(f, typArgs), args1), args2) if overrides(f.symbol, builder.reassignSymbol) =>
         assert(typArgs.length == 1)
         val vr :: Nil = args1
         val vl :: Nil = args2
@@ -286,7 +248,7 @@ private def buildComputationImpl[Computation[_], T]
   }
 
   val owner = Symbol.spliceOwner
-  val transformed = chain(Desugar, Transform)(computation.asTerm, owner)
+  val transformed = chain(Transform)(computation.asTerm, owner)
   val retType = transformed.computationType
   val lmbd = Lambda(
       owner, 
