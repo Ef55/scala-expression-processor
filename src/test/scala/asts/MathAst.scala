@@ -20,7 +20,10 @@ object AST {
   case class Eq[+T](lhs: MathExpr[T], rhs: MathExpr[T]) extends MathExpr[Boolean]
 }
 
-object math extends AstBuilder[AST.MathExpr] with ControlFlow[AST.MathExpr] {
+object math 
+extends AstBuilder[AST.MathExpr] 
+with ControlFlow[AST.MathExpr] 
+with IrrelevantImplicitElse[AST.MathExpr] {
   import AST.*
   transparent inline given AstBuilder[AST.MathExpr] = this
 

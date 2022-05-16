@@ -30,6 +30,7 @@ trait AstBuilder[Tree[_]] extends ComputationBuilder[Tree] {
 }
 
 trait ControlFlow[Tree[_]] { self: AstBuilder[Tree] =>
+  inline def ifThenImplicitElse[T](inline cond: Tree[Boolean], inline thenn: Tree[T], inline elze: Tree[T]): Tree[T]
   inline def ifThenElse[T](inline cond: Tree[Boolean], inline thenn: Tree[T], inline elze: Tree[T]): Tree[T]
   inline def whileLoop[T](inline cond: Tree[Boolean], inline body: Tree[T]): Tree[Unit]
 
@@ -39,10 +40,20 @@ trait ControlFlow[Tree[_]] { self: AstBuilder[Tree] =>
     ifThenElse(cond, thenn, elze)
 
   inline def If[T](inline cond: Tree[Boolean])(inline thenn: Tree[T])(using elze: ImplicitElse[T]): Tree[T] =
-    ifThenElse(cond, thenn, elze.tree)
+    ifThenImplicitElse(cond, thenn, elze.tree)
 
   inline def While[T](inline cond: Tree[Boolean])(inline body: Tree[T]): Tree[Unit] =
     whileLoop(cond, body)
+}
+
+trait NoImplicitElse[Tree[_]] { self: ControlFlow[Tree] with AstBuilder[Tree] =>
+  inline def ifThenImplicitElse[T](inline cond: Tree[Boolean], inline thenn: Tree[T], inline elze: Tree[T]): Tree[T] =
+    scala.compiletime.error("Implicit elses are disabled.")
+}
+
+trait IrrelevantImplicitElse[Tree[_]] { self: ControlFlow[Tree] with AstBuilder[Tree] =>
+  inline def ifThenImplicitElse[T](inline cond: Tree[Boolean], inline thenn: Tree[T], inline elze: Tree[T]): Tree[T] =
+    self.ifThenElse(cond, thenn, elze)
 }
 
 trait DefaultUnitElse[Tree[_]] { self: ControlFlow[Tree] with AstBuilder[Tree] =>
