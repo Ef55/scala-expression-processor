@@ -28,3 +28,17 @@ trait AstBuilder[Tree[_]] extends ComputationBuilder[Tree] {
   override inline def init[T](inline c: () => Tree[T]): Tree[T] =
     c()
 }
+
+trait ControlFlow[Tree[_]] { self: AstBuilder[Tree] =>
+  inline def ifThenElse[T](inline cond: Tree[Boolean], inline thenn: Tree[T], inline elze: Tree[T]): Tree[T]
+  inline def whileLoop[T](inline cond: Tree[Boolean], inline body: Tree[T]): Tree[Unit]
+
+  inline def If[T](inline cond: Tree[Boolean])(inline thenn: Tree[T])(inline elze: Tree[T]): Tree[T] =
+    ifThenElse(cond, thenn, elze)
+
+  inline def If[T](inline cond: Tree[Boolean])(inline thenn: Tree[T])(using c: Tree[T] =:= Tree[Unit]): Tree[Unit] =
+    ifThenElse(cond, c(thenn), self.constant(()))
+
+  inline def While[T](inline cond: Tree[Boolean])(inline body: Tree[T]): Tree[Unit] =
+    whileLoop(cond, body)
+}

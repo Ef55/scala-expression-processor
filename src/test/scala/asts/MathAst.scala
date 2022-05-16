@@ -15,12 +15,12 @@ object AST {
   case class Plus(lhs: MathExpr[Int], rhs: MathExpr[Int]) extends MathExpr[Int]
   case class Minus(lhs: MathExpr[Int], rhs: MathExpr[Int]) extends MathExpr[Int]
   case class Sequence[+T](first: MathExpr[?], second: MathExpr[T]) extends MathExpr[T]
-  case class If[+T](cond: MathExpr[Boolean], thenn: MathExpr[T], elze: MathExpr[T]) extends MathExpr[T]
-  case class While(cond: MathExpr[Boolean], body: MathExpr[Any]) extends MathExpr[Unit]
+  case class IfT[+T](cond: MathExpr[Boolean], thenn: MathExpr[T], elze: MathExpr[T]) extends MathExpr[T]
+  case class WhileT(cond: MathExpr[Boolean], body: MathExpr[Any]) extends MathExpr[Unit]
   case class Eq[+T](lhs: MathExpr[T], rhs: MathExpr[T]) extends MathExpr[Boolean]
 }
 
-object math extends AstBuilder[AST.MathExpr] {
+object math extends AstBuilder[AST.MathExpr] with ControlFlow[AST.MathExpr] {
   import AST.*
   transparent inline given AstBuilder[AST.MathExpr] = this
 
@@ -55,8 +55,8 @@ object math extends AstBuilder[AST.MathExpr] {
   override inline def combine[T, S](inline first: MathExpr[T], inline second: MathExpr[S]) = 
     Sequence(first, second)
 
-  //override def ifThenElse[T](cond: MathExpr[Boolean], thenn: MathExpr[T], elze: MathExpr[T]) = If(cond, thenn, elze)
-  //override def whileLoop(cond: MathExpr[Boolean], body: MathExpr[Any]) = While(cond, body)
+  override inline def ifThenElse[T](inline cond: MathExpr[Boolean], inline thenn: MathExpr[T], inline elze: MathExpr[T]) = IfT(cond, thenn, elze)
+  override inline def whileLoop[T](inline cond: MathExpr[Boolean], inline body: MathExpr[T]) = WhileT(cond, body)
 }
 
 
@@ -185,86 +185,74 @@ object MathAst extends TestSuite {
         if x1 == x2
       =>}
     }
-//     test("proto-control-flow") {
-//       test("if-then-else") {
-//         mathAssert{
-//           val x: Variable[Int] = 0
-//           if x === Constant(-1) then
-//             Constant(0)
-//           else
-//             Constant(1)
-//         }{ case 
-//           Sequence(
-//             Initialize(VariableName("x"), Constant(0)),
-//             If(
-//               Eq(VariableName("x"), Constant(-1)),
-//               Constant(0),
-//               Constant(1)
-//             )
-//           )
-//         =>}
-//       }
-//       test("statement-if-then-else") {
-//         mathAssert{
-//           if Constant(0) === Constant(1) then
-//             if Constant(0) === Constant(1) then
-//               1
-//             else
-//               0
-//           else
-//             0
-//           1
-//         }{case
-//           Sequence(
-//             If(
-//               Eq(Constant(0), Constant(1)),
-//               If(
-//                 Eq(Constant(0), Constant(1)),
-//                 Constant(1),
-//                 Constant(0)
-//               ),
-//               Constant(0)
-//             ),
-//             Constant(1)
-//           )
-//         =>}
-//       }
-//       test("while") {
-//         mathAssert{
-//           var x: Variable[Int] = 10
-//           while x === Constant(0) do
-//             x = x  - Constant(3)
-//           x
-//         }{ case
-//           Sequence(
-//             Initialize(VariableName("x"), Constant(10)), Sequence(
-//               While(
-//                 Eq(VariableName("x"), Constant(0)),
-//                 Assign(VariableName("x"), Minus(VariableName("x"), Constant(3)))
-//               ),
-//               VariableName("x")
-//           ))
-//         =>}
-//       }
-//       test("while-explicit-unit") {
-//         mathAssert{
-//           var x: Variable[Int] = 10
-//           while x === Constant(0) do
-//             x = x  - Constant(3)
-//             ()
-//           x
-//         }{ case
-//           Sequence(
-//             Initialize(VariableName("x"), Constant(10)), Sequence(
-//               While(
-//                 Eq(VariableName("x"), Constant(0)),
-//                 Assign(VariableName("x"), Minus(VariableName("x"), Constant(3)))
-//               ),
-//               VariableName("x")
-//           ))
-//         =>}
-//       }
-//     }
+    test("proto-control-flow") {
+      test("if-then-else") {
+        mathAssert{
+          val x: Variable[Int] = ! 0
+          If(x === Constant(-1)){
+            Constant(0)
+          }{
+            Constant(1)
+          }
+        }{ case 
+          Sequence(
+            Initialize(x1, Constant(0)),
+            IfT(
+              Eq(x2, Constant(-1)),
+              Constant(0),
+              Constant(1)
+            )
+          )
+          if x1 == x2
+        =>}
+      }
+      test("statement-if-then-else") {
+        mathAssert{
+          If(Constant(0) === Constant(1)){
+            If(Constant(0) === Constant(1)){
+              1
+            }{
+              0
+            }
+          }{
+            0
+          }
+          1
+        }{case
+          Sequence(
+            IfT(
+              Eq(Constant(0), Constant(1)),
+              IfT(
+                Eq(Constant(0), Constant(1)),
+                Constant(1),
+                Constant(0)
+              ),
+              Constant(0)
+            ),
+            Constant(1)
+          )
+        =>}
+      }
+      test("while") {
+        mathAssert{
+          var x: Variable[Int] = ! 10
+          While(x === Constant(0)){
+            x =! x  - Constant(3)
+          }
+          x
+        }{ case
+          Sequence(
+            Initialize(x1, Constant(10)), Sequence(
+              WhileT(
+                Eq(x2, Constant(0)),
+                Assign(x3, Minus(x4, Constant(3)))
+              ),
+              x5
+          ))
+          if x1 == x2 && x2 == x3 && x3 == x4 && x4 == x5
+        =>}
+      }
+    }
     test("meta-control-flow") {
       test("if-then-else") {
         mathAssert{
