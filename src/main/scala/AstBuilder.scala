@@ -33,12 +33,18 @@ trait ControlFlow[Tree[_]] { self: AstBuilder[Tree] =>
   inline def ifThenElse[T](inline cond: Tree[Boolean], inline thenn: Tree[T], inline elze: Tree[T]): Tree[T]
   inline def whileLoop[T](inline cond: Tree[Boolean], inline body: Tree[T]): Tree[Unit]
 
+  case class ImplicitElse[T](tree: Tree[T])
+
   inline def If[T](inline cond: Tree[Boolean])(inline thenn: Tree[T])(inline elze: Tree[T]): Tree[T] =
     ifThenElse(cond, thenn, elze)
 
-  inline def If[T](inline cond: Tree[Boolean])(inline thenn: Tree[T])(using c: Tree[T] =:= Tree[Unit]): Tree[Unit] =
-    ifThenElse(cond, c(thenn), self.constant(()))
+  inline def If[T](inline cond: Tree[Boolean])(inline thenn: Tree[T])(using elze: ImplicitElse[T]): Tree[T] =
+    ifThenElse(cond, thenn, elze.tree)
 
   inline def While[T](inline cond: Tree[Boolean])(inline body: Tree[T]): Tree[Unit] =
     whileLoop(cond, body)
+}
+
+trait DefaultUnitElse[Tree[_]] { self: ControlFlow[Tree] with AstBuilder[Tree] =>
+  inline given ImplicitElse[Unit] = ImplicitElse(self.constant(()))
 }
