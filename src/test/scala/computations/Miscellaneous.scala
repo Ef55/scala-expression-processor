@@ -85,5 +85,21 @@ object Miscellaneous extends TestSuite {
         }
       }
     }
+    test("orphan-computation") {
+      wrapAssert{
+        def f = true
+
+        if f then
+          Wrapper(1)
+          1
+        else
+          Wrapper(0)
+          0
+
+        Wrapper(0)
+      }{case
+        Wrapper(0)
+      =>}
+    }
   }
 }

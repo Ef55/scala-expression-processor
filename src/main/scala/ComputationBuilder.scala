@@ -148,10 +148,16 @@ private def buildComputationImpl[Computation[_], T]
           case _ => (statement :: statements, exprs)
       }
 
-    Block(
-      tstatements,
-      (refs :+ last).reduceLeft( (l, r) => builder.combine(l.computationType, r.computationType)(l, r) )
-    )
+    if last.isComputation then
+      Block(
+        tstatements,
+        (refs :+ last).reduceLeft( (l, r) => builder.combine(l.computationType, r.computationType)(l, r) )
+      )
+    else 
+      Block(
+        tstatements,
+        last
+      )
   }
 
   object Transform extends TreeMap {
@@ -247,6 +253,8 @@ private def buildComputationImpl[Computation[_], T]
       case _ => super.transformTerm(t)(owner)
   }
 
+  // println("=======")
+  // println(s"Got: ${Printer.TreeCode.show(computation.asTerm)}")
   val owner = Symbol.spliceOwner
   val transformed = chain(Transform)(computation.asTerm, owner)
   val retType = transformed.computationType
@@ -260,7 +268,5 @@ private def buildComputationImpl[Computation[_], T]
     )
   val r = builder.init(retType)(lmbd)
 
-  // println("=======")
-  // println(s"Got: ${Printer.TreeCode.show(computation.asTerm)}")
-  // println(s"Built: ${Printer.TreeCode.show(r)}")
+  //println(s"Built: ${Printer.TreeCode.show(r)}")
   r.asExprOf[Computation[T]]
