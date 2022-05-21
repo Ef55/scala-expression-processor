@@ -362,5 +362,30 @@ object MathAst extends TestSuite {
         })(2)
       }
     }
+    test("implicit-trees") {
+      test("if-ends") {
+        mathAssert{
+          If(0 === 0) {
+            Constant(1)
+            10
+          }{
+            Constant(2)
+            20
+          }
+        }{case 
+          IfT(
+            Eq(Constant(0), Constant(0)),
+            Sequence(
+              Constant(1),
+              Constant(10)
+            ),
+            Sequence(
+              Constant(2),
+              Constant(20)
+            )
+          )
+        =>}
+      }
+    }
   }
 }

@@ -218,6 +218,13 @@ private def buildComputationImpl[Computation[_], T]
 
     override def transformTerm(t: Term)(owner: Symbol): Term = t match 
 
+      // Push conversions down
+      case Conversion(conv, Block(sts, expr)) =>
+        transformTerm(Block.copy(t)(
+          sts,
+          conv.appliedTo(expr)
+        ))(owner)
+
       case b@BangApplication(_) =>
         report.errorAndAbort(
           s"Invalid use of bang (!): it can only be used at the top-level of a value definition.",

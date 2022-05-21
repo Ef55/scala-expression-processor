@@ -46,6 +46,13 @@ trait ControlFlow[Tree[_]] { self: AstBuilder[Tree] =>
     whileLoop(cond, body)
 }
 
+trait EmptyWhile[Tree[_]] { self: AstBuilder[Tree] =>
+  inline def emptyWhileLoop[T](inline cond: Tree[Boolean]): Tree[Unit]
+
+  inline def While[T](inline cond: Tree[Boolean])(): Tree[Unit] =
+    emptyWhileLoop(cond)
+}
+
 trait NoImplicitElse[Tree[_]] { self: ControlFlow[Tree] with AstBuilder[Tree] =>
   inline def ifThenImplicitElse[T](inline cond: Tree[Boolean], inline thenn: Tree[T], inline elze: Tree[T]): Tree[T] =
     scala.compiletime.error("Implicit elses are disabled.")

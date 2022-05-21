@@ -14,3 +14,12 @@ def unwrap(using Quotes)(wrapper: quotes.reflect.TypeRepr)(tt: quotes.reflect.Ty
       Some(arg)
     case _ => None
 }
+
+object Conversion {
+  def unapply(using Quotes)(t: quotes.reflect.Term): Option[(quotes.reflect.Term, quotes.reflect.Term)] =
+    import quotes.reflect.*
+    t match 
+      case Apply(f@Select(c, "apply"), t :: Nil) if hasBaseType(c.tpe, TypeRepr.of[scala.Conversion]) =>
+        Some((f, t))
+      case _ => None
+}
