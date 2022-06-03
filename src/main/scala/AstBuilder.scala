@@ -25,7 +25,9 @@ trait AstBuilder[Tree[_]] extends ComputationBuilder[Tree] {
   /** Define a constant AST from a Scala value. */
   inline def constant[T](inline t: T): Tree[T]
 
-  inline def combine[T, S](inline l: Tree[T], inline r: Tree[S]): Tree[S]
+  override inline def combine[T, S](inline l: Tree[T], inline r: Tree[S]): Tree[S]
+
+  override inline def assign[T](inline b: Variable[T], inline v: Tree[T]): Tree[Unit]
 
   // Computation expression implementation
 
