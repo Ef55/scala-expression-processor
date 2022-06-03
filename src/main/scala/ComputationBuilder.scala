@@ -13,22 +13,60 @@ object ComputationBuilder {
   private final def toBeErased(element: String): Nothing = 
     throw BuilderImplementationError(s"`${element}` should have been erased during processing.")
 }
+
+/** Leverage metaprogramming to provide computation expressions in Scala.
+  *
+  */ 
 trait ComputationBuilder[Computation[_]] {
   import ComputationBuilder.*
 
+  /** Result of a computation. */
   type Bound[T]
+
+  /** Sequence of computations. */
   type Sequence[T] = Seq[T] // Could (should?) be generalized (i.e. abstracted)
 
+  /** Retrieve the result of a computation. 
+    * 
+    * Used with the bang (!) operator 
+    * {{{ val r = ! computation; follow(r) }}}
+    * becomes
+    * {{{ bind(computation, r => follow(r)) }}}
+    */
   inline def bind[T, S](inline m: Computation[T], inline f: Bound[T] => Computation[S]): Computation[S]
 
+  /** Combine two computations.
+    * 
+    * Used with the semicolon (;) operator
+    * {{{ l; r }}}
+    * becomes
+    * {{{ combine(l, r) }}}
+    */
   inline def combine[T, S](inline l: Computation[T], inline r: Computation[S]): Computation[S]
 
+  /** Fold a sequence of computation into a single computation. */
   inline def sequence[T](inline seq: Sequence[Computation[T]]): Computation[T] = seq.reduceLeft(combine(_, _))
 
+  /** Creates a computation out of a scala value. */
   inline def unit[T](inline t: => T): Computation[T]
 
+  /** Wraps up the whole computation. */
   inline def init[T](inline c: () => Computation[T]): Computation[T]
 
+  /** Change the value of a computation.
+    * 
+    * Used with the `=!` operator
+    * {{{ 
+    * var x = ! computation
+    * x =! newResult
+    * }}}
+    * becomes
+    * {{{
+    * bind(computation, x => 
+    *   assign(x, newResult) 
+    * )
+    * }}}
+    */
   inline def assign[T](inline b: Bound[T], inline v: Computation[T]): Computation[Unit]
 
   extension [T](c: Computation[T]) {
@@ -41,19 +79,32 @@ trait ComputationBuilder[Computation[_]] {
     def =! (c: Computation[T]): Computation[Unit] = toBeErased("Reassign =!")
   }
 
+  /** Disables a feature.
+    * 
+    * {{{
+    * override def assign[T](inline b: Bound[T], inline v: Computation[T]) = undefined("Assign not allowed.")
+    * }}}
+    */
   final inline def undefined(reason: String): Nothing = scala.compiletime.error(reason)
+
+  /** Opt-in this computation builder features. */
   final inline def apply[T](inline c: Computation[T]): Computation[T] = buildComputation(this, c)
 }
 
+/** Mixin implementing trivial `init`. */
 trait DefaultInit[Computation[_]] { self: ComputationBuilder[Computation] =>
   inline def init[T](inline c: () => Computation[T]): Computation[T] = c()
 }
 
+/** Mixin which sets combine to simply sequence statements at the scala level. */
 trait DefaultCombine[Computation[_]] { self: ComputationBuilder[Computation] =>
+  // Already provided by default in the computation builder 
   //inline def sequence[T](inline seq: Sequence[Computation[T]]): Computation[T] = seq.reduceLeft(combine(_, _))
+
   inline def combine[T, S](inline l: Computation[T], inline r: Computation[S]): Computation[S] = { l; r }
 }
 
+/** Mixin disable assignation */
 trait NoAssign[Computation[_]] { self: ComputationBuilder[Computation] => 
   inline def assign[T](inline b: Bound[T], inline v: Computation[T]): Computation[Unit] = undefined("Assignations are not supported.")
 }
